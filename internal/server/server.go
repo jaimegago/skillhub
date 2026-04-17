@@ -41,11 +41,15 @@ func New(mcpIn io.Reader, mcpOut io.Writer, logSink io.Writer, version string) *
 	})
 
 	for _, t := range tools.Registry {
-		s.AddTool(&mcp.Tool{
-			Name:        t.Name,
-			Description: t.Description,
-			InputSchema: t.InputSchema,
-		}, t.Handler)
+		if t.Register != nil {
+			t.Register(s)
+		} else {
+			s.AddTool(&mcp.Tool{
+				Name:        t.Name,
+				Description: t.Description,
+				InputSchema: t.InputSchema,
+			}, t.Handler)
+		}
 	}
 
 	return &Server{

@@ -19,24 +19,31 @@ import (
 // Verify exact annotation field name (likely anthropic/maxResultSizeChars) against
 // current Claude Code docs before adding — do not assume spec provenance.
 
-var describePluginSchema = map[string]any{
-	"type": "object",
-	"properties": map[string]any{
-		"path": map[string]any{
-			"type":        "string",
-			"description": "Absolute path to the plugin root directory (the directory that contains .claude-plugin/plugin.json). Relative paths are resolved against the server process working directory.",
-		},
-	},
-	"required": []string{"path"},
+// DescribePluginInput is the typed input for the describe_plugin tool.
+type DescribePluginInput struct {
+	Path string `json:"path" jsonschema:"Absolute path to the plugin root directory; relative paths are resolved against the server process working directory"`
+}
+
+// DescribePluginOutput is the typed output for the describe_plugin tool.
+type DescribePluginOutput struct {
+	Path       string           `json:"path"`
+	Manifest   manifestSummary  `json:"manifest"`
+	Components pluginComponents `json:"components"`
 }
 
 // NewDescribePlugin returns the describe_plugin tool declaration.
+// It uses the generic mcp.AddTool registration path so the SDK infers the
+// JSON schema from DescribePluginInput / DescribePluginOutput automatically.
 func NewDescribePlugin() Tool {
 	return Tool{
 		Name:        "describe_plugin",
 		Description: "Return structured metadata and shallow component enumeration for a local Claude Code plugin. Inspects the manifest plus skills, agents, MCP servers, hooks, and commands. No marketplace lookup; pass 2 scope only.",
-		InputSchema: describePluginSchema,
-		Handler:     handleDescribePlugin,
+		Register: func(s *mcp.Server) {
+			mcp.AddTool(s, &mcp.Tool{
+				Name:        "describe_plugin",
+				Description: "Return structured metadata and shallow component enumeration for a local Claude Code plugin. Inspects the manifest plus skills, agents, MCP servers, hooks, and commands. No marketplace lookup; pass 2 scope only.",
+			}, HandleDescribePlugin)
+		},
 	}
 }
 
@@ -110,31 +117,20 @@ type pluginComponents struct {
 	// TODO(components): enumerate executables
 }
 
-type describePluginResult struct {
-	Path       string           `json:"path"`
-	Manifest   manifestSummary  `json:"manifest"`
-	Components pluginComponents `json:"components"`
-}
-
-func handleDescribePlugin(_ context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	var input struct {
-		Path string `json:"path"`
-	}
-	if req.Params != nil && len(req.Params.Arguments) > 0 {
-		if err := json.Unmarshal(req.Params.Arguments, &input); err != nil {
-			return errResult(skerrors.ErrInvalidManifest, "invalid arguments", err.Error()), nil
-		}
-	}
-
+// HandleDescribePlugin is the generic typed handler for the describe_plugin tool.
+// Error cases return a non-nil *mcp.CallToolResult with Content pre-set (the SDK
+// keeps it as-is). Success cases return nil so the SDK serializes output into
+// StructuredContent + TextContent automatically.
+func HandleDescribePlugin(_ context.Context, _ *mcp.CallToolRequest, input DescribePluginInput) (*mcp.CallToolResult, DescribePluginOutput, error) {
 	pluginRoot := strings.TrimSpace(input.Path)
 	if pluginRoot == "" {
-		return errResult(skerrors.ErrInvalidManifest, "missing required parameter: path", ""), nil
+		return errResult(skerrors.ErrInvalidManifest, "missing required parameter: path", ""), DescribePluginOutput{}, nil
 	}
 
 	if !filepath.IsAbs(pluginRoot) {
 		wd, err := os.Getwd()
 		if err != nil {
-			return errResult(skerrors.ErrInvalidManifest, "cannot resolve relative path", err.Error()), nil
+			return errResult(skerrors.ErrInvalidManifest, "cannot resolve relative path", err.Error()), DescribePluginOutput{}, nil
 		}
 		pluginRoot = filepath.Join(wd, pluginRoot)
 	}
@@ -142,45 +138,38 @@ func handleDescribePlugin(_ context.Context, req *mcp.CallToolRequest) (*mcp.Cal
 	info, err := os.Stat(pluginRoot)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return errResult(skerrors.ErrPluginNotFound, "path does not exist", pluginRoot), nil
+			return errResult(skerrors.ErrPluginNotFound, "path does not exist", pluginRoot), DescribePluginOutput{}, nil
 		}
-		return errResult(skerrors.ErrPluginNotFound, "cannot stat path", err.Error()), nil
+		return errResult(skerrors.ErrPluginNotFound, "cannot stat path", err.Error()), DescribePluginOutput{}, nil
 	}
 	if !info.IsDir() {
-		return errResult(skerrors.ErrInvalidManifest, "path is not a directory", pluginRoot), nil
+		return errResult(skerrors.ErrInvalidManifest, "path is not a directory", pluginRoot), DescribePluginOutput{}, nil
 	}
 
 	manifestPath := filepath.Join(pluginRoot, ".claude-plugin", "plugin.json")
 	if _, err := os.Stat(manifestPath); err != nil {
-		return errResult(skerrors.ErrInvalidManifest, "directory does not contain .claude-plugin/plugin.json", pluginRoot), nil
+		// FIX 3: directory exists but lacks plugin manifest → ErrPluginNotFound
+		return errResult(skerrors.ErrPluginNotFound, "directory does not contain .claude-plugin/plugin.json", pluginRoot), DescribePluginOutput{}, nil
 	}
 
 	raw, manifest, err := readManifest(manifestPath)
 	if err != nil {
-		return errResult(skerrors.ErrInvalidManifest, "failed to parse plugin.json", err.Error()), nil
+		return errResult(skerrors.ErrInvalidManifest, "failed to parse plugin.json", err.Error()), DescribePluginOutput{}, nil
 	}
 
-	components := pluginComponents{
-		Skills:     enumerateSkills(pluginRoot, raw),
-		Agents:     enumerateAgents(pluginRoot, raw),
-		McpServers: enumerateMcpServers(pluginRoot, raw),
-		Hooks:      enumerateHooks(pluginRoot, raw),
-		Commands:   enumerateCommands(pluginRoot, raw),
+	output := DescribePluginOutput{
+		Path:     pluginRoot,
+		Manifest: manifest,
+		Components: pluginComponents{
+			Skills:     enumerateSkills(pluginRoot, raw),
+			Agents:     enumerateAgents(pluginRoot, raw),
+			McpServers: enumerateMcpServers(pluginRoot, raw),
+			Hooks:      enumerateHooks(pluginRoot, raw),
+			Commands:   enumerateCommands(pluginRoot, raw),
+		},
 	}
 
-	result := describePluginResult{
-		Path:       pluginRoot,
-		Manifest:   manifest,
-		Components: components,
-	}
-
-	b, err := json.Marshal(result)
-	if err != nil {
-		return errResult(skerrors.ErrInvalidManifest, "failed to serialize result", err.Error()), nil
-	}
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{&mcp.TextContent{Text: string(b)}},
-	}, nil
+	return nil, output, nil
 }
 
 func readManifest(path string) (rawPluginManifest, manifestSummary, error) {

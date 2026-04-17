@@ -9,14 +9,18 @@ import (
 	skerrors "github.com/jaime-gago/skillhub/internal/errors"
 )
 
-// Tool bundles an MCP tool declaration with its low-level handler.
-// All stubs use the non-generic ToolHandler form; individual tool implementation
-// passes migrate to typed AddTool[In, Out] when input/output schemas are designed.
+// Tool bundles an MCP tool declaration with its handler.
+//
+// Stubs set Handler (low-level mcp.ToolHandler) and InputSchema.
+// Fully-implemented tools set Register instead, which calls mcp.AddTool with
+// typed In/Out parameters so the SDK infers the JSON schema automatically.
+// Exactly one of Handler or Register must be non-nil for each Tool entry.
 type Tool struct {
 	Name        string
 	Description string
 	InputSchema any
 	Handler     mcp.ToolHandler
+	Register    func(*mcp.Server)
 }
 
 // Registry is the single source of truth for all skillhub tools.

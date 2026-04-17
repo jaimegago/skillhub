@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -27,21 +28,34 @@ func makeMinimalPlugin(t *testing.T, manifest string) string {
 	return root
 }
 
-// callDescribePlugin is a helper that calls the handler with the given path argument.
+// callDescribePlugin calls HandleDescribePlugin directly and returns a
+// *mcp.CallToolResult that tests can inspect via resultText / assertErrCode.
+//
+// For error returns (non-nil result from handler): the result is returned as-is
+// with Content already populated by errResult.
+// For success (nil result from handler): output is marshaled into a TextContent
+// block, matching what the SDK would produce on the server path.
 func callDescribePlugin(t *testing.T, path string) *mcp.CallToolResult {
 	t.Helper()
-	args, err := json.Marshal(map[string]string{"path": path})
+	res, out, err := tools.HandleDescribePlugin(
+		context.Background(),
+		&mcp.CallToolRequest{},
+		tools.DescribePluginInput{Path: path},
+	)
 	if err != nil {
-		t.Fatalf("marshal args: %v", err)
+		t.Fatalf("handler returned unexpected error: %v", err)
 	}
-	req := &mcp.CallToolRequest{}
-	req.Params = &mcp.CallToolParamsRaw{Arguments: args}
-	tool := tools.NewDescribePlugin()
-	result, err := tool.Handler(context.Background(), req)
+	if res != nil {
+		return res
+	}
+	// Success path: simulate SDK serialization of the typed output.
+	b, err := json.Marshal(out)
 	if err != nil {
-		t.Fatalf("handler returned error: %v", err)
+		t.Fatalf("marshal output: %v", err)
 	}
-	return result
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{&mcp.TextContent{Text: string(b)}},
+	}
 }
 
 func resultText(t *testing.T, result *mcp.CallToolResult) string {
@@ -65,12 +79,15 @@ func assertErrCode(t *testing.T, result *mcp.CallToolResult, code string) {
 }
 
 func TestDescribePlugin_MissingParam(t *testing.T) {
-	tool := tools.NewDescribePlugin()
-	result, err := tool.Handler(context.Background(), new(mcp.CallToolRequest))
+	res, _, err := tools.HandleDescribePlugin(
+		context.Background(),
+		&mcp.CallToolRequest{},
+		tools.DescribePluginInput{},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertErrCode(t, result, "INVALID_MANIFEST")
+	assertErrCode(t, res, "INVALID_MANIFEST")
 }
 
 func TestDescribePlugin_PathNotExist(t *testing.T) {
@@ -92,10 +109,11 @@ func TestDescribePlugin_PathIsFile(t *testing.T) {
 	assertErrCode(t, result, "INVALID_MANIFEST")
 }
 
+// FIX 3: directory without plugin.json now returns PLUGIN_NOT_FOUND.
 func TestDescribePlugin_NoPluginJson(t *testing.T) {
 	dir := t.TempDir()
 	result := callDescribePlugin(t, dir)
-	assertErrCode(t, result, "INVALID_MANIFEST")
+	assertErrCode(t, result, "PLUGIN_NOT_FOUND")
 }
 
 func TestDescribePlugin_MinimalManifest(t *testing.T) {
@@ -292,16 +310,34 @@ func TestDescribePlugin_HooksFile(t *testing.T) {
 	}
 }
 
+// FIX 2: use runtime.Caller(0) to locate this test file, then walk up to find
+// the module root (directory containing go.mod). This is deterministic
+// regardless of working directory and never skips.
 func TestDescribePlugin_SelfDescribing(t *testing.T) {
-	// The skillhub repo itself is a valid plugin — smoke-test against it.
-	repoRoot, err := filepath.Abs("../../../")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(filepath.Join(repoRoot, ".claude-plugin", "plugin.json")); err != nil {
-		t.Skip("not running from skillhub repo root, skipping self-describing test")
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller(0) failed")
 	}
 
+	// Walk up from the test file's directory until we find go.mod.
+	dir := filepath.Dir(thisFile)
+	repoRoot := ""
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			repoRoot = dir
+			break
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+	if repoRoot == "" {
+		t.Fatal("could not locate go.mod walking up from test file")
+	}
+
+	// The skillhub repo itself is a valid plugin — smoke-test against it.
 	result := callDescribePlugin(t, repoRoot)
 	text := resultText(t, result)
 
