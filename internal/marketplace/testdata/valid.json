@@ -1,0 +1,37 @@
+{
+  "name": "test-marketplace",
+  "description": "A test marketplace with all optional fields",
+  "owner": {
+    "name": "Test Owner",
+    "email": "owner@example.com"
+  },
+  "plugins": [
+    {
+      "name": "full-plugin",
+      "description": "A plugin with every optional field populated",
+      "version": "1.2.3",
+      "author": {
+        "name": "Plugin Author",
+        "email": "author@example.com"
+      },
+      "homepage": "https://example.com/full-plugin",
+      "keywords": ["testing", "example"],
+      "category": "development",
+      "license": "MIT",
+      "source": {
+        "source": "github",
+        "repo": "example/full-plugin",
+        "ref": "v1.2.3",
+        "sha": "aabbccdd11223344556677889900aabbccdd1122"
+      }
+    },
+    {
+      "name": "minimal-plugin",
+      "description": "A plugin with only the required fields",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/example/minimal-plugin.git"
+      }
+    }
+  ]
+}

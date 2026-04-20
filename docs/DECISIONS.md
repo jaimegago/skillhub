@@ -27,3 +27,23 @@
     }
 
 **Verified against.** SDK source at github.com/modelcontextprotocol/go-sdk, specifically the generic handler type `ToolHandlerFor[In, Out]` and the schema inference in the `jsonschema` subpackage. Commit this decision along with the first generic migration (describe_plugin) so future tool implementations have a worked example in the repo.
+
+## 2026-04-20 — Marketplace.json lives under .claude-plugin/, not at repo root
+
+**Context.** When implementing the HTTP-only marketplace fetch (see entry below), the initial URL construction for github and gitlab host types appended `/marketplace.json` directly after the ref, placing the file at the repository root.
+
+**Problem.** Live smoke test against `https://github.com/anthropics/claude-plugins-official` returned HTTP 404 for `https://raw.githubusercontent.com/anthropics/claude-plugins-official/main/marketplace.json`. The correct URL `https://raw.githubusercontent.com/anthropics/claude-plugins-official/main/.claude-plugin/marketplace.json` returns HTTP 200 with valid JSON.
+
+**Decision.** URL construction for `github` and `gitlab` host types now includes the `.claude-plugin/` path segment before `marketplace.json`. The `generic` host type continues to use the caller-supplied URL verbatim, so non-standard marketplaces remain supported.
+
+**Consequence.** Any existing config pointing a `github` or `gitlab` source at a repo whose `marketplace.json` actually lives at root would silently break — but no such deployed config exists in this project. New marketplace repositories must follow the `.claude-plugin/marketplace.json` convention, which matches the documented Claude Code layout for plugin repos.
+
+**Verified against.** [Plugin Marketplaces docs](https://code.claude.com/docs/en/plugin-marketplaces) — the walkthrough shows `my-marketplace/.claude-plugin/marketplace.json` as the canonical path, and the spec states "Create `.claude-plugin/marketplace.json` in your repository root."
+
+## 2026-04-17 — Marketplace resolution: HTTP-only fetch, no git clone
+
+**Context.** `list_available_plugins`, `search_plugins`, and `recommend_plugins` all need to enumerate plugins from configured marketplace sources. Each marketplace is a git repository whose root contains a `marketplace.json` file. The natural retrieval mechanism is `git clone`, but that requires git on PATH and produces a full working tree.
+
+**Decision.** Fetch `marketplace.json` via raw HTTP only. GitHub sources are transformed to `raw.githubusercontent.com` URLs; GitLab sources to `/-/raw/` URLs; `generic` sources treat the configured URL as the direct URL to `marketplace.json`. No git subprocess is invoked. Credentials are applied as `Authorization: Bearer` headers from the configured `credentialEnvVar`. Responses are cached under `config.CacheDir()/marketplaces/{8-hex-key}/` with a 1-hour TTL; stale cache is used as a fallback on fetch failure.
+
+**Consequence.** This is correct for read-only discovery (list, search, recommend) where only the index file is needed. It does not work for tools that need per-plugin file trees (e.g., pulling a plugin's `skills/` directory for deep inspection or installation). If such a tool is added, revisit: options include sparse checkout via `git` subprocess or fetching individual files via the host's API (GitHub tree API, etc.). Do not attempt git-free tree traversal for that case — it undercuts maintainability.

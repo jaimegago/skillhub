@@ -12,6 +12,7 @@ import (
 type MarketplaceSource struct {
 	URL              string `yaml:"url"`
 	GitHostType      string `yaml:"gitHostType"`      // github | gitlab | generic
+	Ref              string `yaml:"ref"`              // branch/tag; defaults to "main" when empty
 	CredentialEnvVar string `yaml:"credentialEnvVar"` // env var read at invocation; never stored
 }
 
