@@ -61,16 +61,21 @@ func PluginTree(ctx context.Context, src PluginSource, cacheRoot string, refresh
 			if err != nil {
 				return "", "", fmt.Errorf("read cached sha for %s: %w", src.RepoURL, err)
 			}
-			return pluginTreePath(cloneDir, src.Subpath), sha, nil
-		}
-		if !refresh && cacheIsFresh(metaPath) {
+			if subtreePresent(cloneDir, src.Subpath) {
+				return pluginTreePath(cloneDir, src.Subpath), sha, nil
+			}
+			// Subtree absent: clone died between clone and sparse-checkout. Evict.
+		} else if !refresh && cacheIsFresh(metaPath) {
 			sha, err := resolveHEAD(ctx, cloneDir, token)
 			if err != nil {
 				return "", "", fmt.Errorf("read cached sha for %s: %w", src.RepoURL, err)
 			}
-			return pluginTreePath(cloneDir, src.Subpath), sha, nil
+			if subtreePresent(cloneDir, src.Subpath) {
+				return pluginTreePath(cloneDir, src.Subpath), sha, nil
+			}
+			// Subtree absent: clone died between clone and sparse-checkout. Evict.
 		}
-		// Stale or refresh requested: evict and re-clone.
+		// Stale, refresh requested, or incomplete clone: evict and re-clone.
 		if err := os.RemoveAll(cloneDir); err != nil {
 			return "", "", fmt.Errorf("evict stale cache for %s: %w", src.RepoURL, err)
 		}
@@ -102,9 +107,10 @@ func PluginTree(ctx context.Context, src PluginSource, cacheRoot string, refresh
 	}
 
 	if pinnedSHA {
-		// Pinned-SHA fetches skip --depth=1 so the full commit history is
-		// available; git can find any reachable commit without unshallowing.
-		// The tradeoff is a larger initial download compared to --depth=1.
+		// Omits --depth=1 so the full commit graph is available — any reachable
+		// SHA can be checked out. --filter=blob:none still defers blob downloads
+		// to checkout time, so the initial transfer is commits+trees only, not
+		// full blob history.
 		out, err := runGit(ctx, cloneDir, token, "checkout", src.SHA)
 		if err != nil {
 			return "", "", fmt.Errorf("checkout %s in %s: %w\n%s",
@@ -135,10 +141,10 @@ func PluginTree(ctx context.Context, src PluginSource, cacheRoot string, refresh
 
 // cloneRepo runs git clone with the appropriate flags for shallow vs full fetch.
 // Ref-based fetches use --depth=1 to avoid downloading history. Pinned-SHA
-// fetches omit --depth=1: a shallow clone cannot guarantee it contains an
-// arbitrary commit SHA, so full history is cloned and 'git checkout <sha>'
-// finds the target commit. The tradeoff is a larger initial download for
-// pinned-SHA fetches.
+// fetches omit --depth=1 so the full commit graph is available — any reachable
+// SHA can be checked out. --filter=blob:none still defers blob downloads to
+// checkout time, so the initial transfer is commits+trees only, not full blob
+// history.
 func cloneRepo(ctx context.Context, src PluginSource, cloneDir, token string, pinnedSHA bool) error {
 	args := []string{"clone", "--filter=blob:none", "--sparse"}
 	if !pinnedSHA {
@@ -167,9 +173,12 @@ func runGit(ctx context.Context, inDir, token string, subcmdArgs ...string) ([]b
 		args = append(args, "-C", inDir)
 	}
 	if token != "" {
-		// The helper shell function reads $SKILLHUB_GIT_TOKEN, which is set
-		// only on the child process's env and is not written to disk. The
-		// variable lives only for the lifetime of this git invocation.
+		// SKILLHUB_GIT_TOKEN is an internal parent→child env channel used only
+		// by this package. It is unrelated to the caller's CredentialEnvVar
+		// field, which names the user-configured env var holding the real token;
+		// this is just the name the credential helper sub-shell reads from.
+		// Nothing is written to disk; the variable exists only for the lifetime
+		// of this git invocation.
 		helper := `!f() { echo "username=x-access-token"; echo "password=$SKILLHUB_GIT_TOKEN"; }; f`
 		args = append(args, "-c", "credential.helper="+helper)
 	}
@@ -200,6 +209,9 @@ func urlKey(url string) string {
 // cacheSegmentFor returns the cache sub-directory name for a given source.
 // Slashes in ref names are replaced with underscores to avoid nested paths and
 // name collisions (e.g. "feature/foo" → "feature_foo").
+// TODO(v2): underscore substitution can collide — "feature/foo" and
+// "feature_foo" map to the same segment for the same repo. Negligible in v1;
+// a future revisit should consider hashing the ref instead.
 func cacheSegmentFor(src PluginSource, pinnedSHA bool) string {
 	if pinnedSHA {
 		return src.SHA
@@ -213,6 +225,17 @@ func cacheSegmentFor(src PluginSource, pinnedSHA bool) string {
 
 func isValidClone(dir string) bool {
 	_, err := os.Stat(filepath.Join(dir, ".git"))
+	return err == nil
+}
+
+// subtreePresent reports whether the plugin subtree has been materialised inside
+// cloneDir. When subpath is empty the clone root itself is the plugin root and
+// is always considered present (isValidClone already confirmed the dir exists).
+func subtreePresent(cloneDir, subpath string) bool {
+	if subpath == "" {
+		return true
+	}
+	_, err := os.Stat(filepath.Join(cloneDir, filepath.FromSlash(subpath)))
 	return err == nil
 }
 

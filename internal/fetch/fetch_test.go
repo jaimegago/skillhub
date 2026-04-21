@@ -265,6 +265,46 @@ func TestFetchPluginTree_UnreachableRepo(t *testing.T) {
 	}
 }
 
+// TestFetchPluginTree_CorruptedCacheRecovers verifies that a cache directory
+// with a valid .git/ but no materialised subpath (simulating a clone that died
+// between clone and sparse-checkout) is detected, evicted, and re-cloned.
+func TestFetchPluginTree_CorruptedCacheRecovers(t *testing.T) {
+	skipIfNoGit(t)
+
+	repoURL, _ := makeFixtureRepo(t, map[string]string{
+		"plugins/myplugin/plugin.json": `{"name":"myplugin"}`,
+	})
+
+	cacheDir := t.TempDir()
+	src := fetch.PluginSource{RepoURL: repoURL, Subpath: "plugins/myplugin"}
+
+	// Populate the cache with a successful fetch.
+	treePath, _, err := fetch.PluginTree(context.Background(), src, cacheDir, false)
+	if err != nil {
+		t.Fatalf("initial fetch: %v", err)
+	}
+
+	// Simulate a clone that died before sparse-checkout completed: remove the
+	// materialised subtree while leaving .git/ intact.
+	if err := os.RemoveAll(treePath); err != nil {
+		t.Fatalf("remove subtree to simulate corruption: %v", err)
+	}
+	if _, err := os.Stat(treePath); err == nil {
+		t.Fatal("subtree should be gone after removal")
+	}
+
+	// PluginTree must detect the missing subtree, evict the corrupted clone,
+	// re-clone, and return the subtree path with the expected files present.
+	treePath2, _, err := fetch.PluginTree(context.Background(), src, cacheDir, false)
+	if err != nil {
+		t.Fatalf("recovery fetch: %v", err)
+	}
+	pluginJSON := filepath.Join(treePath2, "plugin.json")
+	if _, err := os.Stat(pluginJSON); err != nil {
+		t.Errorf("plugin.json not found after recovery: %v", err)
+	}
+}
+
 // TestFetchPluginTree_ImmutableSHACache verifies that refresh=true does not
 // evict a pinned-SHA cache entry.
 func TestFetchPluginTree_ImmutableSHACache(t *testing.T) {
