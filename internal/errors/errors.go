@@ -8,15 +8,18 @@ type ErrorCode string
 
 // Error code constants for all tool results.
 const (
-	ErrNotImplemented         ErrorCode = "NOT_IMPLEMENTED"
-	ErrAuthFailed             ErrorCode = "AUTH_FAILED"
-	ErrNetworkFailed          ErrorCode = "NETWORK_FAILED"
-	ErrPluginNotFound         ErrorCode = "PLUGIN_NOT_FOUND"
-	ErrSkillNotFound          ErrorCode = "SKILL_NOT_FOUND"
-	ErrDriftBlocked           ErrorCode = "DRIFT_BLOCKED"
-	ErrNothingToPropose       ErrorCode = "NOTHING_TO_PROPOSE"
-	ErrInvalidManifest        ErrorCode = "INVALID_MANIFEST"
-	ErrMarketplaceUnreachable ErrorCode = "MARKETPLACE_UNREACHABLE"
+	ErrNotImplemented           ErrorCode = "NOT_IMPLEMENTED"
+	ErrAuthFailed               ErrorCode = "AUTH_FAILED"
+	ErrNetworkFailed            ErrorCode = "NETWORK_FAILED"
+	ErrFetchFailed              ErrorCode = "FETCH_FAILED"
+	ErrPluginNotFound           ErrorCode = "PLUGIN_NOT_FOUND"
+	ErrSkillNotFound            ErrorCode = "SKILL_NOT_FOUND"
+	ErrDriftBlocked             ErrorCode = "DRIFT_BLOCKED"
+	ErrNothingToPropose         ErrorCode = "NOTHING_TO_PROPOSE"
+	ErrInvalidManifest          ErrorCode = "INVALID_MANIFEST"
+	ErrMarketplaceUnreachable   ErrorCode = "MARKETPLACE_UNREACHABLE"
+	ErrMarketplaceNotConfigured ErrorCode = "MARKETPLACE_NOT_CONFIGURED"
+	ErrUnsupportedSource        ErrorCode = "UNSUPPORTED_SOURCE"
 )
 
 // SkillhubError is the structured error type serialised into all tool results.
