@@ -14,12 +14,15 @@ import (
 type ListAvailablePluginsInput struct {
 	Marketplace string `json:"marketplace,omitempty" jsonschema:"Filter results to a single marketplace by name; omit to list from all configured marketplaces"`
 	Refresh     bool   `json:"refresh,omitempty"    jsonschema:"Force re-fetch from source, ignoring the local cache"`
+	Limit       int    `json:"limit,omitempty"      jsonschema:"Maximum number of plugins to return; defaults to 50 when unset or 0; pass a larger explicit value for bulk operations — there is no unlimited sentinel"`
 }
 
 // ListAvailablePluginsOutput is the typed output for the list_available_plugins tool.
 type ListAvailablePluginsOutput struct {
-	Plugins []AvailablePlugin         `json:"plugins"`
-	Sources []MarketplaceSourceStatus `json:"sources"`
+	Plugins   []AvailablePlugin         `json:"plugins"`
+	Sources   []MarketplaceSourceStatus `json:"sources"`
+	Truncated bool                      `json:"truncated"`
+	Total     int                       `json:"total"`
 }
 
 // AvailablePlugin is one plugin entry in the list output.
@@ -113,6 +116,18 @@ func HandleListAvailablePlugins(ctx context.Context, _ *mcp.CallToolRequest, inp
 			}
 			out.Plugins = append(out.Plugins, ap)
 		}
+	}
+
+	const defaultLimit = 50
+	limit := input.Limit
+	if limit <= 0 {
+		limit = defaultLimit
+	}
+
+	out.Total = len(out.Plugins)
+	out.Truncated = out.Total > limit
+	if out.Truncated {
+		out.Plugins = out.Plugins[:limit]
 	}
 
 	return nil, out, nil

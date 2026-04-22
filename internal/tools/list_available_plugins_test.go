@@ -2,9 +2,11 @@ package tools_test
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -145,6 +147,75 @@ func TestListAvailablePlugins_FilterByName(t *testing.T) {
 	}
 	if out.Sources[0].Name != "beta" {
 		t.Errorf("source.Name = %q, want beta", out.Sources[0].Name)
+	}
+}
+
+func buildLargeFixture(name string, n int) string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, `{"name":%q,"owner":{"name":"Test Team"},"plugins":[`, name)
+	for i := 0; i < n; i++ {
+		if i > 0 {
+			sb.WriteString(",")
+		}
+		fmt.Fprintf(&sb, `{"name":%q,"description":"Plugin %d","source":{"source":"github","repo":"test/%d"}}`,
+			fmt.Sprintf("plugin-%03d", i+1), i+1, i+1)
+	}
+	sb.WriteString("]}")
+	return sb.String()
+}
+
+func TestListAvailablePlugins_DefaultLimitTruncates(t *testing.T) {
+	srv := serveListFixture(t, buildLargeFixture("big", 60))
+	withEnvConfig(t, "marketplaceSources:\n  - url: "+srv.URL+"\n    gitHostType: generic\n")
+
+	out := callListPlugins(t, tools.ListAvailablePluginsInput{})
+
+	if len(out.Plugins) != 50 {
+		t.Errorf("expected 50 plugins (default cap), got %d", len(out.Plugins))
+	}
+	if !out.Truncated {
+		t.Error("expected Truncated=true")
+	}
+	if out.Total != 60 {
+		t.Errorf("expected Total=60, got %d", out.Total)
+	}
+	// Sources count reflects true source size, not post-cap.
+	if out.Sources[0].Count != 60 {
+		t.Errorf("expected Sources[0].Count=60, got %d", out.Sources[0].Count)
+	}
+}
+
+func TestListAvailablePlugins_ExplicitLimitTruncates(t *testing.T) {
+	srv := serveListFixture(t, buildLargeFixture("big", 60))
+	withEnvConfig(t, "marketplaceSources:\n  - url: "+srv.URL+"\n    gitHostType: generic\n")
+
+	out := callListPlugins(t, tools.ListAvailablePluginsInput{Limit: 10})
+
+	if len(out.Plugins) != 10 {
+		t.Errorf("expected 10 plugins, got %d", len(out.Plugins))
+	}
+	if !out.Truncated {
+		t.Error("expected Truncated=true")
+	}
+	if out.Total != 60 {
+		t.Errorf("expected Total=60, got %d", out.Total)
+	}
+}
+
+func TestListAvailablePlugins_NoTruncationBelowLimit(t *testing.T) {
+	srv := serveListFixture(t, buildLargeFixture("small", 5))
+	withEnvConfig(t, "marketplaceSources:\n  - url: "+srv.URL+"\n    gitHostType: generic\n")
+
+	out := callListPlugins(t, tools.ListAvailablePluginsInput{})
+
+	if len(out.Plugins) != 5 {
+		t.Errorf("expected 5 plugins, got %d", len(out.Plugins))
+	}
+	if out.Truncated {
+		t.Error("expected Truncated=false")
+	}
+	if out.Total != 5 {
+		t.Errorf("expected Total=5, got %d", out.Total)
 	}
 }
 
