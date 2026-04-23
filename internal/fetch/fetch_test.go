@@ -305,6 +305,98 @@ func TestFetchPluginTree_CorruptedCacheRecovers(t *testing.T) {
 	}
 }
 
+// makeFixtureRepoTwoBranches creates a bare repo with two divergent branches:
+// "feature/foo" (ref contains a slash) and "feature_foo" (uses underscore).
+// Each branch has a unique commit so their HEAD SHAs differ. Returns the
+// file:// URL and the HEAD SHA for each branch.
+func makeFixtureRepoTwoBranches(t *testing.T) (repoURL, shaSlash, shaUnderscore string) {
+	t.Helper()
+	base := t.TempDir()
+	workDir := filepath.Join(base, "work")
+	bareDir := filepath.Join(base, "bare.git")
+
+	gitFixture(t, "", "git", "init", workDir)
+	gitFixture(t, workDir, "git", "config", "user.email", "ci@test")
+	gitFixture(t, workDir, "git", "config", "user.name", "CI")
+
+	if err := os.WriteFile(filepath.Join(workDir, "plugin.json"), []byte(`{"name":"base"}`), 0o644); err != nil {
+		t.Fatalf("write plugin.json: %v", err)
+	}
+	gitFixture(t, workDir, "git", "add", ".")
+	gitFixture(t, workDir, "git", "commit", "-m", "initial")
+
+	out, err := exec.Command("git", "-C", workDir, "rev-parse", "HEAD").Output()
+	if err != nil {
+		t.Fatalf("rev-parse HEAD: %v", err)
+	}
+	initialSHA := strings.TrimSpace(string(out))
+
+	// Branch feature/foo
+	gitFixture(t, workDir, "git", "checkout", "-b", "feature/foo")
+	if err := os.WriteFile(filepath.Join(workDir, "foo.txt"), []byte("feature/foo"), 0o644); err != nil {
+		t.Fatalf("write foo.txt: %v", err)
+	}
+	gitFixture(t, workDir, "git", "add", ".")
+	gitFixture(t, workDir, "git", "commit", "-m", "feature/foo commit")
+	out, err = exec.Command("git", "-C", workDir, "rev-parse", "HEAD").Output()
+	if err != nil {
+		t.Fatalf("rev-parse HEAD: %v", err)
+	}
+	shaSlash = strings.TrimSpace(string(out))
+
+	// Branch feature_foo branched from initial (diverges from feature/foo)
+	gitFixture(t, workDir, "git", "checkout", initialSHA)
+	gitFixture(t, workDir, "git", "checkout", "-b", "feature_foo")
+	if err := os.WriteFile(filepath.Join(workDir, "underscore.txt"), []byte("feature_foo"), 0o644); err != nil {
+		t.Fatalf("write underscore.txt: %v", err)
+	}
+	gitFixture(t, workDir, "git", "add", ".")
+	gitFixture(t, workDir, "git", "commit", "-m", "feature_foo commit")
+	out, err = exec.Command("git", "-C", workDir, "rev-parse", "HEAD").Output()
+	if err != nil {
+		t.Fatalf("rev-parse HEAD: %v", err)
+	}
+	shaUnderscore = strings.TrimSpace(string(out))
+
+	gitFixture(t, "", "git", "clone", "--bare", workDir, bareDir)
+	return "file://" + bareDir, shaSlash, shaUnderscore
+}
+
+// TestFetchPluginTree_RefWithSlash verifies that refs containing slashes
+// ("feature/foo") and refs using underscores ("feature_foo") are cached in
+// distinct directories and resolve to their respective branch HEADs.
+func TestFetchPluginTree_RefWithSlash(t *testing.T) {
+	skipIfNoGit(t)
+
+	repoURL, wantSHASlash, wantSHAUnderscore := makeFixtureRepoTwoBranches(t)
+	cacheDir := t.TempDir()
+
+	srcSlash := fetch.PluginSource{RepoURL: repoURL, Ref: "feature/foo"}
+	pathSlash, shaSlash, err := fetch.PluginTree(context.Background(), srcSlash, cacheDir, false)
+	if err != nil {
+		t.Fatalf("PluginTree(feature/foo): %v", err)
+	}
+	if shaSlash != wantSHASlash {
+		t.Errorf("feature/foo sha = %q, want %q", shaSlash, wantSHASlash)
+	}
+
+	srcUnderscore := fetch.PluginSource{RepoURL: repoURL, Ref: "feature_foo"}
+	pathUnderscore, shaUnderscore, err := fetch.PluginTree(context.Background(), srcUnderscore, cacheDir, false)
+	if err != nil {
+		t.Fatalf("PluginTree(feature_foo): %v", err)
+	}
+	if shaUnderscore != wantSHAUnderscore {
+		t.Errorf("feature_foo sha = %q, want %q", shaUnderscore, wantSHAUnderscore)
+	}
+
+	if shaSlash == shaUnderscore {
+		t.Error("feature/foo and feature_foo resolved to the same SHA — branches must differ")
+	}
+	if pathSlash == pathUnderscore {
+		t.Error("feature/foo and feature_foo share the same cache path — collision not fixed")
+	}
+}
+
 // TestFetchPluginTree_ImmutableSHACache verifies that refresh=true does not
 // evict a pinned-SHA cache entry.
 func TestFetchPluginTree_ImmutableSHACache(t *testing.T) {

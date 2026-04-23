@@ -207,11 +207,10 @@ func urlKey(url string) string {
 }
 
 // cacheSegmentFor returns the cache sub-directory name for a given source.
-// Slashes in ref names are replaced with underscores to avoid nested paths and
-// name collisions (e.g. "feature/foo" → "feature_foo").
-// TODO(v2): underscore substitution can collide — "feature/foo" and
-// "feature_foo" map to the same segment for the same repo. Negligible in v1;
-// a future revisit should consider hashing the ref instead.
+// Refs without slashes use their literal name (readable: "main", "v1.2.3").
+// Refs containing slashes are replaced with an 8-hex-char sha256 prefix to
+// prevent path nesting and collision ("feature/foo" and "feature_foo" would
+// otherwise map to the same segment after underscore substitution).
 func cacheSegmentFor(src PluginSource, pinnedSHA bool) string {
 	if pinnedSHA {
 		return src.SHA
@@ -220,7 +219,11 @@ func cacheSegmentFor(src PluginSource, pinnedSHA bool) string {
 	if seg == "" {
 		seg = "HEAD"
 	}
-	return strings.ReplaceAll(seg, "/", "_")
+	if strings.Contains(seg, "/") {
+		h := sha256.Sum256([]byte(seg))
+		return fmt.Sprintf("%x", h[:4])
+	}
+	return seg
 }
 
 func isValidClone(dir string) bool {
