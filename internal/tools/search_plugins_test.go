@@ -6,7 +6,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/jaime-gago/skillhub/internal/tools"
+	"github.com/jaimegago/skillhub/internal/tools"
 )
 
 func TestSearchPluginsNotImplemented(t *testing.T) {

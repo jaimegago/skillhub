@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jaime-gago/skillhub/internal/fetch"
+	"github.com/jaimegago/skillhub/internal/fetch"
 )
 
 func skipIfNoGit(t *testing.T) {

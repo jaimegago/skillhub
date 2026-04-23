@@ -8,7 +8,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/jaime-gago/skillhub/internal/tools"
+	"github.com/jaimegago/skillhub/internal/tools"
 )
 
 const serverInstructions = `skillhub manages Claude Code plugins and skills. Use these tools when you need to check whether a local skill has drifted from its marketplace source, generate a diff, propose upstream changes, discover available plugins, or inspect a plugin's manifest and skill contents.`

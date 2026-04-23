@@ -13,7 +13,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/jaime-gago/skillhub/internal/fetch"
+	"github.com/jaimegago/skillhub/internal/fetch"
 )
 
 // fakeTreeFetcher is a test double for TreeFetcher that returns a

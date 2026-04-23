@@ -13,7 +13,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"gopkg.in/yaml.v3"
 
-	skerrors "github.com/jaime-gago/skillhub/internal/errors"
+	skerrors "github.com/jaimegago/skillhub/internal/errors"
 )
 
 // DescribePluginInput is the typed input for the describe_plugin tool.

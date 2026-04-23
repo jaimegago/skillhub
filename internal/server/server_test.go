@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jaime-gago/skillhub/internal/server"
-	"github.com/jaime-gago/skillhub/internal/tools"
+	"github.com/jaimegago/skillhub/internal/server"
+	"github.com/jaimegago/skillhub/internal/tools"
 )
 
 func TestToolListMatchesRegistry(t *testing.T) {

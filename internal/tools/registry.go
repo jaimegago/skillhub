@@ -6,7 +6,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	skerrors "github.com/jaime-gago/skillhub/internal/errors"
+	skerrors "github.com/jaimegago/skillhub/internal/errors"
 )
 
 // Tool bundles an MCP tool declaration with its handler.

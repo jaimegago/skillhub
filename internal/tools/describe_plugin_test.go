@@ -12,7 +12,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/jaime-gago/skillhub/internal/tools"
+	"github.com/jaimegago/skillhub/internal/tools"
 )
 
 // makeMinimalPlugin creates a temp directory with a minimal .claude-plugin/plugin.json.

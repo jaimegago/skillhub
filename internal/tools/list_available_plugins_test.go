@@ -11,7 +11,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/jaime-gago/skillhub/internal/tools"
+	"github.com/jaimegago/skillhub/internal/tools"
 )
 
 // listFixture is a minimal marketplace.json payload for tool-level tests.

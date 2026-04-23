@@ -14,10 +14,10 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/jaime-gago/skillhub/internal/config"
-	skerrors "github.com/jaime-gago/skillhub/internal/errors"
-	"github.com/jaime-gago/skillhub/internal/fetch"
-	"github.com/jaime-gago/skillhub/internal/marketplace"
+	"github.com/jaimegago/skillhub/internal/config"
+	skerrors "github.com/jaimegago/skillhub/internal/errors"
+	"github.com/jaimegago/skillhub/internal/fetch"
+	"github.com/jaimegago/skillhub/internal/marketplace"
 )
 
 // errNpmSource is returned by parsePluginSource when the source kind is npm.

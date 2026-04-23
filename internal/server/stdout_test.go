@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jaime-gago/skillhub/internal/server"
+	"github.com/jaimegago/skillhub/internal/server"
 )
 
 // TestNoStdoutWriteDuringInit verifies that constructing the server does not

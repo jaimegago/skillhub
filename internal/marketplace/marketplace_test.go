@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jaime-gago/skillhub/internal/config"
+	"github.com/jaimegago/skillhub/internal/config"
 )
 
 func testdataPath(name string) string {

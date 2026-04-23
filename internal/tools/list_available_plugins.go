@@ -5,9 +5,9 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/jaime-gago/skillhub/internal/config"
-	skerrors "github.com/jaime-gago/skillhub/internal/errors"
-	"github.com/jaime-gago/skillhub/internal/marketplace"
+	"github.com/jaimegago/skillhub/internal/config"
+	skerrors "github.com/jaimegago/skillhub/internal/errors"
+	"github.com/jaimegago/skillhub/internal/marketplace"
 )
 
 // ListAvailablePluginsInput is the typed input for the list_available_plugins tool.

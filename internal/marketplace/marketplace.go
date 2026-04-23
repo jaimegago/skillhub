@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jaime-gago/skillhub/internal/config"
+	"github.com/jaimegago/skillhub/internal/config"
 )
 
 const cacheTTL = time.Hour

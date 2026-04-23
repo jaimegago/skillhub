@@ -1,3 +1,45 @@
+## 2026-04-23 — v0.1.0 distribution: binary-first, $PATH-resolved plugin command
+
+**Context.** v0.1.0 is the first public release. Code is ready: 3 of 7 tools are implemented (`describe_plugin`, `list_available_plugins`, `check_drift`), the test suite passes, and the MCP server works end-to-end. The release needs a distribution model that serves two distinct audiences: binary users (install via Homebrew, Scoop, or an install script, no repo clone required) and developer users (clone + build from source, iterate on the code).
+
+**Problem.**
+
+Before this decision, `plugin.json` declared:
+
+    "command": "${CLAUDE_PLUGIN_ROOT}/bin/skillhub"
+
+That path requires a compiled binary inside the cloned plugin directory. Binary users who install via Homebrew, Scoop, or an install script do not have the repo cloned (and if they do, they have no reason to run `make build` inside it). They cannot activate skillhub as a Claude Code plugin.
+
+The Claude Code plugin schema accepts a single `command` string. There is no fallback, no alternative path, and no platform-conditional syntax. (Verified against the Claude Code plugin reference this session.) Supporting both resolution paths in a single `plugin.json` is not possible.
+
+**Decision.**
+
+*Distribution.* Pre-built binaries for darwin, linux, and windows × amd64/arm64 (arm64 where applicable) are shipped on GitHub Releases and distributed via:
+
+- Homebrew tap: `jaimegago/homebrew-skillhub`
+- Scoop bucket: `jaimegago/scoop-skillhub`
+- Unix install script: `install.sh` (curl|bash)
+- PowerShell install script: `install.ps1` (iwr|iex)
+- `go install github.com/jaimegago/skillhub/cmd/skillhub@v0.1.0`
+
+All pre-built distribution is driven by goreleaser on tag push (goreleaser config added in a follow-up).
+
+*`plugin.json` command.* Changed to `"skillhub"` — a bare binary name, resolved via `$PATH`. Every distribution method above places `skillhub` on `$PATH` automatically. Clone users must run `make install` once before `claude --plugin-dir .`; this is documented in the README and in `make help`.
+
+**Consequence.**
+
+Binary users get fully frictionless plugin activation: install the binary via any method above, clone the repo for `plugin.json`, and point `--plugin-dir` at the clone.
+
+Clone users need one extra step (`make install`) before `claude --plugin-dir .` works. This is a one-time setup cost, explicitly documented.
+
+`$PATH` collisions are unlikely given the name `skillhub`; a collision would silently shadow the installed binary. Acceptable tradeoff — no realistic collision surface exists at v0.1.0.
+
+Windows support is best-effort for v0.1.0. The MCP server logic and git subprocess calls include `-c core.autocrlf=false -c core.eol=lf` to prevent line-ending drift, but end-to-end testing on Windows has not been performed. Revisit for v0.2.0.
+
+Revisit this decision if: (a) Claude Code gains a first-class way to resolve plugin binaries from a shared install location without requiring `$PATH`; (b) the plugin manifest schema adds fallback or platform-conditional command syntax; (c) we need to ship a non-stdio transport where the binary is not the execution entry point.
+
+**Verified against.** Claude Code plugin reference (fetched this session) — `mcpServers.command` is a single string with no fallback or conditional syntax documented. Goreleaser documentation not consulted at decision time; goreleaser config lands in a follow-up prompt.
+
 ## 2026-04-17 — MCP server config: inline in plugin.json, not a separate .mcp.json
 
 **Context.** The Claude Code plugin reference lists `.mcp.json` at the plugin root as the default location for MCP server declarations, and also accepts inline `mcpServers` in `plugin.json`. We initially chose the separate-file form for separation of concerns.

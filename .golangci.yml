@@ -13,7 +13,7 @@ formatters:
   settings:
     goimports:
       local-prefixes:
-        - github.com/jaime-gago/skillhub
+        - github.com/jaimegago/skillhub
 
 issues:
   exclude-rules:

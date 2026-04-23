@@ -1,4 +1,4 @@
-module github.com/jaime-gago/skillhub
+module github.com/jaimegago/skillhub
 
 go 1.25.0
 

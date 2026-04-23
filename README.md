@@ -2,42 +2,92 @@
 
 A Claude Code plugin that ships an MCP server with tooling for authoring, inspecting, and maintaining Claude Code plugins and skills.
 
-**Status**: scaffolding — all tools are stubbed and return `NOT_IMPLEMENTED`. Business logic lands one tool at a time.
+**Status**: three tools implemented (`check_drift`, `list_available_plugins`, `describe_plugin`); four return `NOT_IMPLEMENTED` stubs (`diff_skill`, `propose_skill_changes`, `search_plugins`, `recommend_plugins`).
 
 ## What it does
 
-skillhub exposes MCP tools to Claude that cover the full plugin/skill lifecycle:
+skillhub exposes MCP tools to Claude covering the full plugin/skill lifecycle.
+
+**Implemented**
 
 | Tool | Description |
 |------|-------------|
-| `check_drift` | Detect whether a local skill has diverged from its marketplace source |
+| `describe_plugin` | Return plugin.json metadata and enumerated component contents for a local plugin directory |
+| `list_available_plugins` | Fetch configured marketplace sources and list plugins not currently installed locally |
+| `check_drift` | Compare a locally-installed plugin against its declared marketplace upstream and report changed, added, and removed files |
+
+**Stubbed (not yet implemented)**
+
+| Tool | Description |
+|------|-------------|
 | `diff_skill` | Unified diff between local and canonical skill version |
 | `propose_skill_changes` | Open an MR against the marketplace source; supports `dry_run` |
-| `list_available_plugins` | List uninstalled plugins from configured marketplace sources |
 | `search_plugins` | Substring search across plugin metadata |
 | `recommend_plugins` | Rank plugins by relevance to a free-text description |
-| `describe_plugin` | Return plugin.json + bundled SKILL.md contents |
 
-## Install as a Claude Code plugin
+## Install
 
+### Homebrew (macOS / Linux)
+
+```bash
+brew tap jaimegago/skillhub
+brew install skillhub
 ```
-git clone https://github.com/jaime-gago/skillhub
+
+### Scoop (Windows)
+
+```powershell
+scoop bucket add skillhub https://github.com/jaimegago/scoop-skillhub
+scoop install skillhub
+```
+
+### Install script (Unix)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/jaimegago/skillhub/main/install.sh | bash
+```
+
+### Install script (PowerShell)
+
+```powershell
+iwr https://raw.githubusercontent.com/jaimegago/skillhub/main/install.ps1 | iex
+```
+
+### go install
+
+```bash
+go install github.com/jaimegago/skillhub/cmd/skillhub@v0.1.0
+```
+
+### Build from source
+
+```bash
+git clone https://github.com/jaimegago/skillhub
 cd skillhub
 make build
+make install
+```
+
+`make install` copies the binary to `$GOPATH/bin` (or `~/go/bin` if `GOPATH` is unset), placing it on `$PATH`.
+
+## Claude Code plugin usage
+
+`plugin.json` resolves the `skillhub` binary from `$PATH`. Any install method that places the binary on `$PATH` enables plugin use without a separate build step.
+
+**Binary installs (Homebrew, Scoop, install scripts):** the binary is on `$PATH` after installation. Clone this repo to get `plugin.json`, then activate:
+
+```bash
+git clone https://github.com/jaimegago/skillhub
+claude --plugin-dir skillhub
+```
+
+**Build from source:** run `make install` after `make build` to put the binary on `$PATH`, then:
+
+```bash
 claude --plugin-dir .
 ```
 
 Once activated, run `/mcp` inside Claude Code to confirm the `skillhub` server and its tools appear.
-
-> **Prerequisites / Troubleshooting**
->
-> `bin/skillhub` is not tracked by git and does not exist after a fresh clone. Run `make build` before `claude --plugin-dir .` for the first time.
->
-> If the plugin activates but tools do not appear in `/mcp`, confirm the binary exists and is executable:
-> ```
-> ls -l bin/skillhub
-> chmod +x bin/skillhub   # if needed
-> ```
 
 ## Configuration
 
@@ -59,21 +109,20 @@ Credentials are read from the named environment variable at invocation time. The
 
 ## Development
 
-```
-make build   # compile to bin/skillhub
-make test    # run all tests
-make lint    # run golangci-lint
-make run     # build + start MCP server on stdio
+```bash
+make build    # compile to bin/skillhub
+make test     # run all tests
+make lint     # run golangci-lint
+make run      # build + start MCP server on stdio
+make install  # install binary to $GOPATH/bin
+make help     # list all targets
 ```
 
 Go 1.25+ required.
 
-## Contributing
+See [CHANGELOG.md](CHANGELOG.md) for release history.
 
-1. Fork and clone the repo.
-2. Implement one tool at a time — pick any stub in `internal/tools/`.
-3. Remove the `notImplemented()` call, add a real handler, define the input/output schema, and delete the `//nolint` pragmas if present.
-4. `make test` and `make lint` must pass before opening a PR.
+Contributions are welcome. Implement one stub at a time: pick any tool in `internal/tools/`, remove the `notImplemented()` call, define typed input/output structs, write tests, and open a PR. `make test` and `make lint` must pass.
 
 ## License
 
