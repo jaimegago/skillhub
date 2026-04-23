@@ -648,3 +648,80 @@ func TestDescribePlugin_SelfDescribing(t *testing.T) {
 		t.Error("expected non-empty manifest name for skillhub self-describe")
 	}
 }
+
+func TestDescribePlugin_OutputStyles(t *testing.T) {
+	const manifest = `{"name":"myplugin"}`
+	root := makeMinimalPlugin(t, manifest)
+
+	stylesDir := filepath.Join(root, "output-styles")
+	if err := os.MkdirAll(stylesDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	const styleMd = "---\nname: Concise\ndescription: Terse, minimal prose\n---\n\nBody text."
+	if err := os.WriteFile(filepath.Join(stylesDir, "concise.md"), []byte(styleMd), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Non-.md file and directory should be excluded.
+	if err := os.WriteFile(filepath.Join(stylesDir, "README.txt"), []byte("ignore me"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(stylesDir, "subdir"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	result := callDescribePlugin(t, root)
+	text := resultText(t, result)
+
+	var out struct {
+		Components struct {
+			OutputStyles []struct {
+				File        string `json:"file"`
+				Name        string `json:"name"`
+				Description string `json:"description"`
+				Error       string `json:"error"`
+			} `json:"outputStyles"`
+		} `json:"components"`
+	}
+	if err := json.Unmarshal([]byte(text), &out); err != nil {
+		t.Fatalf("result is not valid JSON: %v\nraw: %s", err, text)
+	}
+	if len(out.Components.OutputStyles) != 1 {
+		t.Fatalf("expected 1 output style, got %d", len(out.Components.OutputStyles))
+	}
+	s := out.Components.OutputStyles[0]
+	if s.File != "concise.md" {
+		t.Errorf("file = %q, want %q", s.File, "concise.md")
+	}
+	if s.Name != "Concise" {
+		t.Errorf("name = %q, want %q", s.Name, "Concise")
+	}
+	if s.Description != "Terse, minimal prose" {
+		t.Errorf("description = %q, want %q", s.Description, "Terse, minimal prose")
+	}
+	if s.Error != "" {
+		t.Errorf("unexpected error: %s", s.Error)
+	}
+}
+
+func TestDescribePlugin_OutputStyles_Empty(t *testing.T) {
+	const manifest = `{"name":"myplugin"}`
+	root := makeMinimalPlugin(t, manifest)
+
+	result := callDescribePlugin(t, root)
+	text := resultText(t, result)
+
+	var out struct {
+		Components struct {
+			OutputStyles []any `json:"outputStyles"`
+		} `json:"components"`
+	}
+	if err := json.Unmarshal([]byte(text), &out); err != nil {
+		t.Fatalf("result is not valid JSON: %v\nraw: %s", err, text)
+	}
+	if out.Components.OutputStyles == nil {
+		t.Error("outputStyles should be [] not null")
+	}
+	if len(out.Components.OutputStyles) != 0 {
+		t.Errorf("expected 0 output styles, got %d", len(out.Components.OutputStyles))
+	}
+}

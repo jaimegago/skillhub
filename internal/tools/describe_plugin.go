@@ -131,18 +131,23 @@ type executableInfo struct {
 	File string `json:"file"`
 }
 
+type outputStyleInfo struct {
+	File        string `json:"file"`
+	Name        string `json:"name,omitempty"`
+	Description string `json:"description,omitempty"`
+	Error       string `json:"error,omitempty"`
+}
+
 type pluginComponents struct {
-	Skills      []skillInfo      `json:"skills"`
-	Agents      []agentInfo      `json:"agents"`
-	McpServers  []mcpServerInfo  `json:"mcpServers"`
-	Hooks       []hookEventInfo  `json:"hooks"`
-	Commands    []commandInfo    `json:"commands"`
-	LspServers  []lspServerInfo  `json:"lspServers"`
-	Monitors    []monitorInfo    `json:"monitors"`
-	Executables []executableInfo `json:"executables"`
-	// TODO(components): enumerate output_styles — plugin reference documents .md files in
-	// output-styles/ and manifest key outputStyles, but specifies no frontmatter schema
-	// (no name/description field names). Verify field names from docs before implementing.
+	Skills       []skillInfo       `json:"skills"`
+	Agents       []agentInfo       `json:"agents"`
+	McpServers   []mcpServerInfo   `json:"mcpServers"`
+	Hooks        []hookEventInfo   `json:"hooks"`
+	Commands     []commandInfo     `json:"commands"`
+	LspServers   []lspServerInfo   `json:"lspServers"`
+	Monitors     []monitorInfo     `json:"monitors"`
+	Executables  []executableInfo  `json:"executables"`
+	OutputStyles []outputStyleInfo `json:"outputStyles"`
 }
 
 // HandleDescribePlugin is the generic typed handler for the describe_plugin tool.
@@ -196,14 +201,15 @@ func HandleDescribePlugin(_ context.Context, _ *mcp.CallToolRequest, input Descr
 		SkillsTotal:      skillsTotal,
 		SkillsNextCursor: nextCursor,
 		Components: pluginComponents{
-			Skills:      skills,
-			Agents:      enumerateAgents(pluginRoot, raw),
-			McpServers:  enumerateMcpServers(pluginRoot, raw),
-			Hooks:       enumerateHooks(pluginRoot, raw),
-			Commands:    enumerateCommands(pluginRoot, raw),
-			LspServers:  enumerateLspServers(pluginRoot, raw),
-			Monitors:    enumerateMonitors(pluginRoot, raw),
-			Executables: enumerateExecutables(pluginRoot, raw),
+			Skills:       skills,
+			Agents:       enumerateAgents(pluginRoot, raw),
+			McpServers:   enumerateMcpServers(pluginRoot, raw),
+			Hooks:        enumerateHooks(pluginRoot, raw),
+			Commands:     enumerateCommands(pluginRoot, raw),
+			LspServers:   enumerateLspServers(pluginRoot, raw),
+			Monitors:     enumerateMonitors(pluginRoot, raw),
+			Executables:  enumerateExecutables(pluginRoot, raw),
+			OutputStyles: enumerateOutputStyles(pluginRoot, raw),
 		},
 	}
 
@@ -355,6 +361,35 @@ func enumerateAgents(pluginRoot string, m rawPluginManifest) []agentInfo {
 		return []agentInfo{}
 	}
 	return agents
+}
+
+func enumerateOutputStyles(pluginRoot string, m rawPluginManifest) []outputStyleInfo {
+	base := resolveDir(pluginRoot, m.OutputStyles, "output-styles")
+	entries, err := os.ReadDir(base)
+	if err != nil {
+		return []outputStyleInfo{}
+	}
+	var styles []outputStyleInfo
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(strings.ToLower(e.Name()), ".md") {
+			continue
+		}
+		osi := outputStyleInfo{File: e.Name()}
+		data, err := os.ReadFile(filepath.Join(base, e.Name()))
+		if err != nil {
+			osi.Error = fmt.Sprintf("cannot read output style file: %s", err.Error())
+		} else if name, desc, err := parseFrontmatter(data); err != nil {
+			osi.Error = fmt.Sprintf("frontmatter parse error: %s", err.Error())
+		} else {
+			osi.Name = name
+			osi.Description = desc
+		}
+		styles = append(styles, osi)
+	}
+	if styles == nil {
+		return []outputStyleInfo{}
+	}
+	return styles
 }
 
 type mcpServerEntry struct {
