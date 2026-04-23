@@ -57,6 +57,7 @@ type CheckDriftOutput struct {
 	UpstreamPlugin      string             `json:"upstream_plugin,omitempty"`
 	CommitSHA           string             `json:"commit_sha,omitempty"`
 	PluginStatus        string             `json:"plugin_status"`
+	HasWarnings         bool               `json:"has_warnings,omitempty"`
 	Skills              []SkillDriftResult `json:"skills"`
 }
 
@@ -67,6 +68,7 @@ type SkillDriftResult struct {
 	DriftedFiles      []string `json:"drifted_files,omitempty"`
 	LocalOnlyFiles    []string `json:"local_only_files,omitempty"`
 	UpstreamOnlyFiles []string `json:"upstream_only_files,omitempty"`
+	Warnings          []string `json:"warnings,omitempty"`
 }
 
 // manifestUpstreamDecl reads x-skillhub-upstream from a plugin.json without
@@ -302,13 +304,15 @@ func (h *checkDriftHandler) handle(ctx context.Context, _ *mcp.CallToolRequest, 
 		UpstreamPlugin:      pluginName,
 		CommitSHA:           sha,
 		PluginStatus:        computePluginStatus(skills),
+		HasWarnings:         pluginHasWarnings(skills),
 		Skills:              skills,
 	}, nil
 }
 
 // computePluginStatus derives the plugin-level status from per-skill results.
 // Returns "drifted" if any skill is drifted, missing-local, or missing-upstream;
-// "up-to-date" otherwise (including when there are no skills).
+// "up-to-date" otherwise (including when there are no skills). Warnings do not
+// affect status.
 func computePluginStatus(skills []SkillDriftResult) string {
 	for _, s := range skills {
 		switch s.Status {
@@ -317,6 +321,16 @@ func computePluginStatus(skills []SkillDriftResult) string {
 		}
 	}
 	return "up-to-date"
+}
+
+// pluginHasWarnings reports whether any skill in the list carries warnings.
+func pluginHasWarnings(skills []SkillDriftResult) bool {
+	for _, s := range skills {
+		if len(s.Warnings) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // parsePluginSource converts a marketplace PluginEntry.Source (raw JSON) into a
@@ -388,12 +402,49 @@ func checkSkillDrift(localDir, upstreamDir string) SkillDriftResult {
 		return SkillDriftResult{Status: "missing-upstream"}
 	}
 
-	localFiles := walkDirContents(localDir)
-	upstreamFiles := walkDirContents(upstreamDir)
+	localFiles, localUnreadable, localSymlinks := walkDirContents(localDir)
+	upstreamFiles, upstreamUnreadable, upstreamSymlinks := walkDirContents(upstreamDir)
+
+	// Build warnings for all unreadable files and symlinks on either side.
+	var warnings []string
+	for _, rel := range localUnreadable {
+		warnings = append(warnings, "unreadable: local/"+rel)
+	}
+	for _, rel := range localSymlinks {
+		warnings = append(warnings, "symlink ignored: local/"+rel)
+	}
+	for _, rel := range upstreamUnreadable {
+		warnings = append(warnings, "unreadable: upstream/"+rel)
+	}
+	for _, rel := range upstreamSymlinks {
+		warnings = append(warnings, "symlink ignored: upstream/"+rel)
+	}
+	if len(warnings) > 0 {
+		sort.Strings(warnings)
+	}
+
+	// Paths that are unreadable or symlinks on either side are excluded from
+	// the byte comparison entirely — they are not evidence of drift.
+	excluded := make(map[string]bool, len(localUnreadable)+len(localSymlinks)+len(upstreamUnreadable)+len(upstreamSymlinks))
+	for _, rel := range localUnreadable {
+		excluded[rel] = true
+	}
+	for _, rel := range localSymlinks {
+		excluded[rel] = true
+	}
+	for _, rel := range upstreamUnreadable {
+		excluded[rel] = true
+	}
+	for _, rel := range upstreamSymlinks {
+		excluded[rel] = true
+	}
 
 	var drifted, localOnly, upstreamOnly []string
 
 	for rel, localData := range localFiles {
+		if excluded[rel] {
+			continue
+		}
 		if upstreamData, ok := upstreamFiles[rel]; !ok {
 			localOnly = append(localOnly, rel)
 		} else if !bytes.Equal(localData, upstreamData) {
@@ -401,16 +452,19 @@ func checkSkillDrift(localDir, upstreamDir string) SkillDriftResult {
 		}
 	}
 	for rel := range upstreamFiles {
+		if excluded[rel] {
+			continue
+		}
 		if _, ok := localFiles[rel]; !ok {
 			upstreamOnly = append(upstreamOnly, rel)
 		}
 	}
 
 	if len(drifted) == 0 && len(localOnly) == 0 && len(upstreamOnly) == 0 {
-		return SkillDriftResult{Status: "up-to-date"}
+		return SkillDriftResult{Status: "up-to-date", Warnings: warnings}
 	}
 
-	result := SkillDriftResult{Status: "drifted"}
+	result := SkillDriftResult{Status: "drifted", Warnings: warnings}
 	if len(drifted) > 0 {
 		sort.Strings(drifted)
 		result.DriftedFiles = drifted
@@ -431,11 +485,12 @@ func dirExists(dir string) bool {
 	return err == nil && info.IsDir()
 }
 
-// walkDirContents returns a map of slash-separated relative path → file bytes
-// for every file under dir. Unreadable files are silently skipped.
-// TODO: file read errors and symlinks are silently swallowed; a future revision should surface these as per-skill errors rather than dropping files from the comparison map.
-func walkDirContents(dir string) map[string][]byte {
-	files := map[string][]byte{}
+// walkDirContents walks dir and returns:
+//   - files: slash-separated relative path → file bytes for every readable regular file
+//   - unreadable: relative paths where os.ReadFile failed
+//   - symlinks: relative paths that are symbolic links (not followed, not read)
+func walkDirContents(dir string) (files map[string][]byte, unreadable []string, symlinks []string) {
+	files = map[string][]byte{}
 	_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return nil
@@ -444,12 +499,18 @@ func walkDirContents(dir string) map[string][]byte {
 		if relErr != nil {
 			return nil
 		}
-		data, readErr := os.ReadFile(path)
-		if readErr != nil {
+		rel = filepath.ToSlash(rel)
+		if d.Type()&fs.ModeSymlink != 0 {
+			symlinks = append(symlinks, rel)
 			return nil
 		}
-		files[filepath.ToSlash(rel)] = data
+		data, readErr := os.ReadFile(path)
+		if readErr != nil {
+			unreadable = append(unreadable, rel)
+			return nil
+		}
+		files[rel] = data
 		return nil
 	})
-	return files
+	return files, unreadable, symlinks
 }

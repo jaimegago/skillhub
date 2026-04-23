@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -413,3 +414,220 @@ func TestCheckDrift_GithubSourceChain(t *testing.T) {
 // assertDriftErrCode is kept to suppress the "declared but not used" error
 // for the helper; it will be used if error-path tests are added to this file.
 var _ = assertDriftErrCode
+
+// TestCheckDrift_UnreadableFile: local has readable A and unreadable B (chmod
+// 0o000); upstream has identical A and B. B is excluded from comparison and
+// surfaces as a warning. Skill and plugin are up-to-date.
+func TestCheckDrift_UnreadableFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod 0o000 not supported on Windows")
+	}
+
+	localFiles := map[string]map[string]string{
+		"skill-a": {"a.sh": "content-a", "b.sh": "content-b"},
+	}
+	upstreamFiles := map[string]map[string]string{
+		"skill-a": {"a.sh": "content-a", "b.sh": "content-b"},
+	}
+	localRoot := makePlugin(t, upToDateManifest, localFiles)
+	upstreamRoot := makeUpstream(t, upstreamFiles)
+
+	unreadablePath := filepath.Join(localRoot, "skills", "skill-a", "b.sh")
+	if err := os.Chmod(unreadablePath, 0o000); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(unreadablePath, 0o644) })
+
+	// Skip if we can still read the file (e.g. running as root).
+	if _, err := os.ReadFile(unreadablePath); err == nil {
+		t.Skip("file still readable after chmod 0o000 (running as root?)")
+	}
+
+	h, _ := setupGithubMarketplace(t, upstreamRoot, "abc")
+	out := parseDriftOutput(t, callDriftHandler(t, h, CheckDriftInput{PluginPath: localRoot}))
+
+	if out.PluginStatus != "up-to-date" {
+		t.Errorf("plugin_status = %q, want up-to-date", out.PluginStatus)
+	}
+	if !out.HasWarnings {
+		t.Error("expected has_warnings=true")
+	}
+	if len(out.Skills) != 1 {
+		t.Fatalf("expected 1 skill, got %d", len(out.Skills))
+	}
+	s := out.Skills[0]
+	if s.Status != "up-to-date" {
+		t.Errorf("skill status = %q, want up-to-date", s.Status)
+	}
+	if len(s.DriftedFiles) != 0 || len(s.LocalOnlyFiles) != 0 || len(s.UpstreamOnlyFiles) != 0 {
+		t.Errorf("unexpected drift entries: drifted=%v local_only=%v upstream_only=%v",
+			s.DriftedFiles, s.LocalOnlyFiles, s.UpstreamOnlyFiles)
+	}
+	wantWarn := "unreadable: local/b.sh"
+	found := false
+	for _, w := range s.Warnings {
+		if w == wantWarn {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected warning %q in %v", wantWarn, s.Warnings)
+	}
+}
+
+// TestCheckDrift_UnreadableCausesSkip: local has readable A (matches upstream)
+// and unreadable B. Upstream has A only. B is excluded from comparison so there
+// is no false local_only entry.
+func TestCheckDrift_UnreadableCausesSkip(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod 0o000 not supported on Windows")
+	}
+
+	localFiles := map[string]map[string]string{
+		"skill-a": {"a.sh": "content-a", "b.sh": "content-b"},
+	}
+	upstreamFiles := map[string]map[string]string{
+		"skill-a": {"a.sh": "content-a"},
+	}
+	localRoot := makePlugin(t, upToDateManifest, localFiles)
+	upstreamRoot := makeUpstream(t, upstreamFiles)
+
+	unreadablePath := filepath.Join(localRoot, "skills", "skill-a", "b.sh")
+	if err := os.Chmod(unreadablePath, 0o000); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(unreadablePath, 0o644) })
+
+	if _, err := os.ReadFile(unreadablePath); err == nil {
+		t.Skip("file still readable after chmod 0o000 (running as root?)")
+	}
+
+	h, _ := setupGithubMarketplace(t, upstreamRoot, "abc")
+	out := parseDriftOutput(t, callDriftHandler(t, h, CheckDriftInput{PluginPath: localRoot}))
+
+	if out.PluginStatus != "up-to-date" {
+		t.Errorf("plugin_status = %q, want up-to-date", out.PluginStatus)
+	}
+	if len(out.Skills) != 1 {
+		t.Fatalf("expected 1 skill, got %d", len(out.Skills))
+	}
+	s := out.Skills[0]
+	if s.Status != "up-to-date" {
+		t.Errorf("skill status = %q, want up-to-date", s.Status)
+	}
+	if len(s.LocalOnlyFiles) != 0 {
+		t.Errorf("unexpected local_only_files: %v", s.LocalOnlyFiles)
+	}
+	wantWarn := "unreadable: local/b.sh"
+	found := false
+	for _, w := range s.Warnings {
+		if w == wantWarn {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected warning %q in %v", wantWarn, s.Warnings)
+	}
+}
+
+// TestCheckDrift_SymlinkIgnored: a symlink exists only in the local skill.
+// Upstream does not have that path. No local_only entry; symlink surfaces as a
+// warning.
+func TestCheckDrift_SymlinkIgnored(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks require elevated privileges on Windows")
+	}
+
+	localFiles := map[string]map[string]string{
+		"skill-a": {"a.sh": "content-a"},
+	}
+	upstreamFiles := map[string]map[string]string{
+		"skill-a": {"a.sh": "content-a"},
+	}
+	localRoot := makePlugin(t, upToDateManifest, localFiles)
+	upstreamRoot := makeUpstream(t, upstreamFiles)
+
+	linkPath := filepath.Join(localRoot, "skills", "skill-a", "link.sh")
+	if err := os.Symlink("/dev/null", linkPath); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+
+	h, _ := setupGithubMarketplace(t, upstreamRoot, "abc")
+	out := parseDriftOutput(t, callDriftHandler(t, h, CheckDriftInput{PluginPath: localRoot}))
+
+	if out.PluginStatus != "up-to-date" {
+		t.Errorf("plugin_status = %q, want up-to-date", out.PluginStatus)
+	}
+	if len(out.Skills) != 1 {
+		t.Fatalf("expected 1 skill, got %d", len(out.Skills))
+	}
+	s := out.Skills[0]
+	if s.Status != "up-to-date" {
+		t.Errorf("skill status = %q, want up-to-date", s.Status)
+	}
+	if len(s.LocalOnlyFiles) != 0 {
+		t.Errorf("unexpected local_only_files: %v (symlink must not appear as drift)", s.LocalOnlyFiles)
+	}
+	wantWarn := "symlink ignored: local/link.sh"
+	found := false
+	for _, w := range s.Warnings {
+		if w == wantWarn {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected warning %q in %v", wantWarn, s.Warnings)
+	}
+}
+
+// TestCheckDrift_SymlinkBothSides: same symlink path on both local and upstream.
+// No drift; two warnings (one per side).
+func TestCheckDrift_SymlinkBothSides(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks require elevated privileges on Windows")
+	}
+
+	localFiles := map[string]map[string]string{
+		"skill-a": {"a.sh": "content-a"},
+	}
+	upstreamFiles := map[string]map[string]string{
+		"skill-a": {"a.sh": "content-a"},
+	}
+	localRoot := makePlugin(t, upToDateManifest, localFiles)
+	upstreamRoot := makeUpstream(t, upstreamFiles)
+
+	localLink := filepath.Join(localRoot, "skills", "skill-a", "link.sh")
+	if err := os.Symlink("/dev/null", localLink); err != nil {
+		t.Fatalf("local symlink: %v", err)
+	}
+	upstreamLink := filepath.Join(upstreamRoot, "skills", "skill-a", "link.sh")
+	if err := os.Symlink("/dev/null", upstreamLink); err != nil {
+		t.Fatalf("upstream symlink: %v", err)
+	}
+
+	h, _ := setupGithubMarketplace(t, upstreamRoot, "abc")
+	out := parseDriftOutput(t, callDriftHandler(t, h, CheckDriftInput{PluginPath: localRoot}))
+
+	if out.PluginStatus != "up-to-date" {
+		t.Errorf("plugin_status = %q, want up-to-date", out.PluginStatus)
+	}
+	if len(out.Skills) != 1 {
+		t.Fatalf("expected 1 skill, got %d", len(out.Skills))
+	}
+	s := out.Skills[0]
+	if s.Status != "up-to-date" {
+		t.Errorf("skill status = %q, want up-to-date", s.Status)
+	}
+	if len(s.DriftedFiles) != 0 || len(s.LocalOnlyFiles) != 0 || len(s.UpstreamOnlyFiles) != 0 {
+		t.Errorf("unexpected drift entries: %+v", s)
+	}
+	warnSet := make(map[string]bool, len(s.Warnings))
+	for _, w := range s.Warnings {
+		warnSet[w] = true
+	}
+	for _, want := range []string{"symlink ignored: local/link.sh", "symlink ignored: upstream/link.sh"} {
+		if !warnSet[want] {
+			t.Errorf("expected warning %q in %v", want, s.Warnings)
+		}
+	}
+}
