@@ -1,0 +1,110 @@
+version: 2
+
+project_name: skillhub
+
+before:
+  hooks:
+    - go mod tidy
+    - go mod download
+
+builds:
+  - id: skillhub
+    main: ./cmd/skillhub
+    binary: skillhub
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      # {{.ShortCommit}} matches the Makefile's `git rev-parse --short HEAD`.
+      # goreleaser's {{.Commit}} is the full SHA — use {{.ShortCommit}} for parity.
+      - -s -w -X main.version={{.Version}} -X main.commit={{.ShortCommit}} -X main.date={{.Date}}
+
+archives:
+  - id: default
+    # .Os and .Arch are the correct casing (verified from goreleaser schema).
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    # formats: (plural, StringArray) is current as of goreleaser v2.6+.
+    # format: (singular) is deprecated — do not use.
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    files:
+      - LICENSE
+      - README.md
+      - CHANGELOG.md
+
+checksum:
+  name_template: "{{ .ProjectName }}_{{ .Version }}_checksums.txt"
+  algorithm: sha256
+
+# version_template is the v2 snapshot key (name_template was v1).
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  use: git
+  groups:
+    - title: Features
+      regexp: "^feat[(:]"
+      order: 0
+    - title: Bug Fixes
+      regexp: "^fix[(:]"
+      order: 1
+    - title: Documentation
+      regexp: "^docs[(:]"
+      order: 2
+    - title: Chores
+      regexp: "^chore[(:]"
+      order: 3
+    - title: Others
+      order: 999
+
+# brews: deprecated since goreleaser v2.10 but still functional for CLI formula publishing.
+# If publishing breaks after a goreleaser upgrade, check https://goreleaser.com/customization/homebrew/
+brews:
+  - name: skillhub
+    # repository: is the current key (verified); the old tap: key does not exist in v2.
+    repository:
+      owner: jaimegago
+      name: homebrew-skillhub
+      branch: main
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    commit_author:
+      name: goreleaserbot
+      email: bot@goreleaser.com
+    homepage: "https://github.com/jaimegago/skillhub"
+    description: "MCP server for authoring and maintaining Claude Code plugins and skills"
+    license: "Apache-2.0"
+    install: |
+      bin.install "skillhub"
+    test: |
+      system "#{bin}/skillhub", "version"
+
+scoops:
+  - name: skillhub
+    # repository: is the current key (verified); the old bucket: key was removed.
+    # Scoop integration is stable (not deprecated) as of goreleaser v2.
+    repository:
+      owner: jaimegago
+      name: scoop-skillhub
+      branch: main
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    commit_author:
+      name: goreleaserbot
+      email: bot@goreleaser.com
+    homepage: "https://github.com/jaimegago/skillhub"
+    description: "MCP server for authoring and maintaining Claude Code plugins and skills"
+    license: "Apache-2.0"
