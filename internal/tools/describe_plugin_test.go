@@ -3,6 +3,7 @@ package tools_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -307,6 +308,296 @@ func TestDescribePlugin_HooksFile(t *testing.T) {
 		if h.Count != 1 {
 			t.Errorf("hook %q: count = %d, want 1", h.Event, h.Count)
 		}
+	}
+}
+
+func TestDescribePlugin_InlineLspServers(t *testing.T) {
+	const manifest = `{
+		"name": "myplugin",
+		"lspServers": {
+			"gopls": {
+				"command": "gopls",
+				"args": ["serve"],
+				"extensionToLanguage": {".go": "go"}
+			}
+		}
+	}`
+	root := makeMinimalPlugin(t, manifest)
+
+	result := callDescribePlugin(t, root)
+	text := resultText(t, result)
+
+	var out struct {
+		Components struct {
+			LspServers []struct {
+				Name                string            `json:"name"`
+				Command             string            `json:"command"`
+				ExtensionToLanguage map[string]string `json:"extensionToLanguage"`
+			} `json:"lspServers"`
+		} `json:"components"`
+	}
+	if err := json.Unmarshal([]byte(text), &out); err != nil {
+		t.Fatalf("result is not valid JSON: %v\nraw: %s", err, text)
+	}
+	if len(out.Components.LspServers) != 1 {
+		t.Fatalf("expected 1 LSP server, got %d", len(out.Components.LspServers))
+	}
+	srv := out.Components.LspServers[0]
+	if srv.Name != "gopls" {
+		t.Errorf("name = %q, want %q", srv.Name, "gopls")
+	}
+	if srv.Command != "gopls" {
+		t.Errorf("command = %q, want %q", srv.Command, "gopls")
+	}
+	if srv.ExtensionToLanguage[".go"] != "go" {
+		t.Errorf("extensionToLanguage[.go] = %q, want %q", srv.ExtensionToLanguage[".go"], "go")
+	}
+}
+
+func TestDescribePlugin_LspServersFile(t *testing.T) {
+	const manifest = `{"name": "myplugin"}`
+	root := makeMinimalPlugin(t, manifest)
+
+	const lspJSON = `{
+		"ts": {
+			"command": "typescript-language-server",
+			"args": ["--stdio"],
+			"extensionToLanguage": {".ts": "typescript", ".tsx": "typescriptreact"}
+		}
+	}`
+	if err := os.WriteFile(filepath.Join(root, ".lsp.json"), []byte(lspJSON), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	result := callDescribePlugin(t, root)
+	text := resultText(t, result)
+
+	var out struct {
+		Components struct {
+			LspServers []struct {
+				Name    string `json:"name"`
+				Command string `json:"command"`
+			} `json:"lspServers"`
+		} `json:"components"`
+	}
+	if err := json.Unmarshal([]byte(text), &out); err != nil {
+		t.Fatalf("result is not valid JSON: %v\nraw: %s", err, text)
+	}
+	if len(out.Components.LspServers) != 1 {
+		t.Fatalf("expected 1 LSP server, got %d", len(out.Components.LspServers))
+	}
+	if out.Components.LspServers[0].Name != "ts" {
+		t.Errorf("name = %q, want %q", out.Components.LspServers[0].Name, "ts")
+	}
+	if out.Components.LspServers[0].Command != "typescript-language-server" {
+		t.Errorf("command = %q, want %q", out.Components.LspServers[0].Command, "typescript-language-server")
+	}
+}
+
+func TestDescribePlugin_MonitorsFile(t *testing.T) {
+	const manifest = `{"name": "myplugin"}`
+	root := makeMinimalPlugin(t, manifest)
+
+	if err := os.MkdirAll(filepath.Join(root, "monitors"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	const monitorsJSON = `[
+		{"name": "error-log", "command": "tail -F ./logs/error.log", "description": "Application error log"},
+		{"name": "deploy-status", "command": "./scripts/poll.sh", "description": "Deployment status", "when": "on-skill-invoke:deploy"}
+	]`
+	if err := os.WriteFile(filepath.Join(root, "monitors", "monitors.json"), []byte(monitorsJSON), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	result := callDescribePlugin(t, root)
+	text := resultText(t, result)
+
+	var out struct {
+		Components struct {
+			Monitors []struct {
+				Name        string `json:"name"`
+				Command     string `json:"command"`
+				Description string `json:"description"`
+				When        string `json:"when"`
+			} `json:"monitors"`
+		} `json:"components"`
+	}
+	if err := json.Unmarshal([]byte(text), &out); err != nil {
+		t.Fatalf("result is not valid JSON: %v\nraw: %s", err, text)
+	}
+	if len(out.Components.Monitors) != 2 {
+		t.Fatalf("expected 2 monitors, got %d", len(out.Components.Monitors))
+	}
+	var found bool
+	for _, m := range out.Components.Monitors {
+		if m.Name == "deploy-status" {
+			found = true
+			if m.When != "on-skill-invoke:deploy" {
+				t.Errorf("when = %q, want %q", m.When, "on-skill-invoke:deploy")
+			}
+			if m.Description != "Deployment status" {
+				t.Errorf("description = %q, want %q", m.Description, "Deployment status")
+			}
+		}
+	}
+	if !found {
+		t.Error("deploy-status monitor not found")
+	}
+}
+
+func TestDescribePlugin_InlineMonitors(t *testing.T) {
+	const manifest = `{
+		"name": "myplugin",
+		"monitors": [
+			{"name": "status", "command": "echo ok", "description": "Status check"}
+		]
+	}`
+	root := makeMinimalPlugin(t, manifest)
+
+	result := callDescribePlugin(t, root)
+	text := resultText(t, result)
+
+	var out struct {
+		Components struct {
+			Monitors []struct {
+				Name        string `json:"name"`
+				Description string `json:"description"`
+			} `json:"monitors"`
+		} `json:"components"`
+	}
+	if err := json.Unmarshal([]byte(text), &out); err != nil {
+		t.Fatalf("result is not valid JSON: %v\nraw: %s", err, text)
+	}
+	if len(out.Components.Monitors) != 1 {
+		t.Fatalf("expected 1 monitor, got %d", len(out.Components.Monitors))
+	}
+	if out.Components.Monitors[0].Name != "status" {
+		t.Errorf("name = %q, want %q", out.Components.Monitors[0].Name, "status")
+	}
+	if out.Components.Monitors[0].Description != "Status check" {
+		t.Errorf("description = %q, want %q", out.Components.Monitors[0].Description, "Status check")
+	}
+}
+
+func TestDescribePlugin_Executables(t *testing.T) {
+	const manifest = `{"name": "myplugin"}`
+	root := makeMinimalPlugin(t, manifest)
+
+	binDir := filepath.Join(root, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"my-tool", "helper"} {
+		if err := os.WriteFile(filepath.Join(binDir, name), []byte("#!/bin/sh\necho hello"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Subdirectory should be excluded.
+	if err := os.MkdirAll(filepath.Join(binDir, "subdir"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	result := callDescribePlugin(t, root)
+	text := resultText(t, result)
+
+	var out struct {
+		Components struct {
+			Executables []struct {
+				File string `json:"file"`
+			} `json:"executables"`
+		} `json:"components"`
+	}
+	if err := json.Unmarshal([]byte(text), &out); err != nil {
+		t.Fatalf("result is not valid JSON: %v\nraw: %s", err, text)
+	}
+	if len(out.Components.Executables) != 2 {
+		t.Fatalf("expected 2 executables, got %d: %v", len(out.Components.Executables), out.Components.Executables)
+	}
+	files := map[string]bool{}
+	for _, e := range out.Components.Executables {
+		files[e.File] = true
+	}
+	for _, want := range []string{"my-tool", "helper"} {
+		if !files[want] {
+			t.Errorf("executable %q not found in result", want)
+		}
+	}
+}
+
+func TestDescribePlugin_SkillsPagination(t *testing.T) {
+	const manifest = `{"name":"bigplugin"}`
+	root := makeMinimalPlugin(t, manifest)
+
+	const total = 30
+	for i := 0; i < total; i++ {
+		dir := filepath.Join(root, "skills", fmt.Sprintf("skill-%02d", i))
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		md := fmt.Sprintf("---\nname: Skill %02d\ndescription: Skill number %d\n---\n", i, i)
+		if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(md), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Page 1: limit 20, no cursor.
+	res1, out1, err := tools.HandleDescribePlugin(
+		context.Background(),
+		&mcp.CallToolRequest{},
+		tools.DescribePluginInput{Path: root, SkillsLimit: 20},
+	)
+	if err != nil {
+		t.Fatalf("page 1 unexpected error: %v", err)
+	}
+	if res1 != nil {
+		t.Fatalf("page 1 expected success, got error result")
+	}
+	if out1.SkillsTotal != total {
+		t.Errorf("page 1 SkillsTotal = %d, want %d", out1.SkillsTotal, total)
+	}
+	if len(out1.Components.Skills) != 20 {
+		t.Errorf("page 1 skill count = %d, want 20", len(out1.Components.Skills))
+	}
+	if out1.SkillsNextCursor == "" {
+		t.Fatal("page 1 expected non-empty SkillsNextCursor")
+	}
+
+	// Page 2: use cursor from page 1.
+	res2, out2, err := tools.HandleDescribePlugin(
+		context.Background(),
+		&mcp.CallToolRequest{},
+		tools.DescribePluginInput{Path: root, SkillsLimit: 20, SkillsCursor: out1.SkillsNextCursor},
+	)
+	if err != nil {
+		t.Fatalf("page 2 unexpected error: %v", err)
+	}
+	if res2 != nil {
+		t.Fatalf("page 2 expected success, got error result")
+	}
+	if len(out2.Components.Skills) != 10 {
+		t.Errorf("page 2 skill count = %d, want 10", len(out2.Components.Skills))
+	}
+	if out2.SkillsNextCursor != "" {
+		t.Errorf("page 2 expected empty SkillsNextCursor (last page), got %q", out2.SkillsNextCursor)
+	}
+	if out2.SkillsTotal != total {
+		t.Errorf("page 2 SkillsTotal = %d, want %d", out2.SkillsTotal, total)
+	}
+
+	// No-limit call still returns all skills.
+	_, out0, err := tools.HandleDescribePlugin(
+		context.Background(),
+		&mcp.CallToolRequest{},
+		tools.DescribePluginInput{Path: root},
+	)
+	if err != nil {
+		t.Fatalf("no-limit unexpected error: %v", err)
+	}
+	if len(out0.Components.Skills) != total {
+		t.Errorf("no-limit skill count = %d, want %d", len(out0.Components.Skills), total)
+	}
+	if out0.SkillsNextCursor != "" {
+		t.Errorf("no-limit expected empty SkillsNextCursor, got %q", out0.SkillsNextCursor)
 	}
 }
 

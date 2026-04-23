@@ -10,8 +10,7 @@ import (
 )
 
 func TestDiffSkillNotImplemented(t *testing.T) {
-	tool := tools.NewDiffSkill()
-	result, err := tool.Handler(context.Background(), new(mcp.CallToolRequest))
+	result, err := tools.HandleDiffSkill(context.Background(), new(mcp.CallToolRequest))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -15,33 +16,38 @@ import (
 	skerrors "github.com/jaime-gago/skillhub/internal/errors"
 )
 
-// TODO(large-output): declare size annotation and paginate when implemented.
-// Verify exact annotation field name (likely anthropic/maxResultSizeChars) against
-// current Claude Code docs before adding — do not assume spec provenance.
-
 // DescribePluginInput is the typed input for the describe_plugin tool.
 type DescribePluginInput struct {
-	Path string `json:"path" jsonschema:"Absolute path to the plugin root directory; relative paths are resolved against the server process working directory"`
+	Path         string `json:"path"                    jsonschema:"Absolute path to the plugin root directory; relative paths are resolved against the server process working directory"`
+	SkillsLimit  int    `json:"skillsLimit,omitempty"   jsonschema:"Maximum number of skills to return per page; 0 returns all skills"`
+	SkillsCursor string `json:"skillsCursor,omitempty"  jsonschema:"Opaque cursor from a previous response; omit or leave empty for the first page"`
 }
 
 // DescribePluginOutput is the typed output for the describe_plugin tool.
+// When SkillsLimit > 0, Components.Skills contains at most SkillsLimit entries.
+// SkillsNextCursor is set when more skills remain; pass it as SkillsCursor in the
+// next call. SkillsTotal is always the full count across all pages.
 type DescribePluginOutput struct {
-	Path       string           `json:"path"`
-	Manifest   manifestSummary  `json:"manifest"`
-	Components pluginComponents `json:"components"`
+	Path             string           `json:"path"`
+	Manifest         manifestSummary  `json:"manifest"`
+	Components       pluginComponents `json:"components"`
+	SkillsTotal      int              `json:"skillsTotal"`
+	SkillsNextCursor string           `json:"skillsNextCursor,omitempty"`
 }
 
 // NewDescribePlugin returns the describe_plugin tool declaration.
 // It uses the generic mcp.AddTool registration path so the SDK infers the
 // JSON schema from DescribePluginInput / DescribePluginOutput automatically.
 func NewDescribePlugin() Tool {
+	const desc = "Return structured metadata and shallow component enumeration for a local Claude Code plugin. Inspects the manifest plus skills, agents, MCP servers, hooks, and commands. No marketplace lookup; pass 2 scope only."
 	return Tool{
 		Name:        "describe_plugin",
-		Description: "Return structured metadata and shallow component enumeration for a local Claude Code plugin. Inspects the manifest plus skills, agents, MCP servers, hooks, and commands. No marketplace lookup; pass 2 scope only.",
+		Description: desc,
 		Register: func(s *mcp.Server) {
 			mcp.AddTool(s, &mcp.Tool{
 				Name:        "describe_plugin",
-				Description: "Return structured metadata and shallow component enumeration for a local Claude Code plugin. Inspects the manifest plus skills, agents, MCP servers, hooks, and commands. No marketplace lookup; pass 2 scope only.",
+				Description: desc,
+				Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 			}, HandleDescribePlugin)
 		},
 	}
@@ -49,18 +55,21 @@ func NewDescribePlugin() Tool {
 
 // rawPluginManifest mirrors the plugin.json fields used during parsing.
 type rawPluginManifest struct {
-	Name        string          `json:"name"`
-	Version     string          `json:"version"`
-	Description string          `json:"description"`
-	Author      json.RawMessage `json:"author"`
-	License     string          `json:"license"`
-	Homepage    string          `json:"homepage"`
-	Repository  json.RawMessage `json:"repository"`
-	Skills      json.RawMessage `json:"skills"`
-	Agents      json.RawMessage `json:"agents"`
-	Hooks       json.RawMessage `json:"hooks"`
-	Commands    json.RawMessage `json:"commands"`
-	McpServers  json.RawMessage `json:"mcpServers"`
+	Name         string          `json:"name"`
+	Version      string          `json:"version"`
+	Description  string          `json:"description"`
+	Author       json.RawMessage `json:"author"`
+	License      string          `json:"license"`
+	Homepage     string          `json:"homepage"`
+	Repository   json.RawMessage `json:"repository"`
+	Skills       json.RawMessage `json:"skills"`
+	Agents       json.RawMessage `json:"agents"`
+	Hooks        json.RawMessage `json:"hooks"`
+	Commands     json.RawMessage `json:"commands"`
+	McpServers   json.RawMessage `json:"mcpServers"`
+	OutputStyles json.RawMessage `json:"outputStyles"`
+	LspServers   json.RawMessage `json:"lspServers"`
+	Monitors     json.RawMessage `json:"monitors"`
 }
 
 // manifestSummary is the subset of manifest fields included in the result.
@@ -105,16 +114,35 @@ type commandInfo struct {
 	Error       string `json:"error,omitempty"`
 }
 
+type lspServerInfo struct {
+	Name                string            `json:"name"`
+	Command             string            `json:"command,omitempty"`
+	ExtensionToLanguage map[string]string `json:"extensionToLanguage,omitempty"`
+}
+
+type monitorInfo struct {
+	Name        string `json:"name"`
+	Command     string `json:"command,omitempty"`
+	Description string `json:"description,omitempty"`
+	When        string `json:"when,omitempty"`
+}
+
+type executableInfo struct {
+	File string `json:"file"`
+}
+
 type pluginComponents struct {
-	Skills     []skillInfo     `json:"skills"`
-	Agents     []agentInfo     `json:"agents"`
-	McpServers []mcpServerInfo `json:"mcpServers"`
-	Hooks      []hookEventInfo `json:"hooks"`
-	Commands   []commandInfo   `json:"commands"`
-	// TODO(components): enumerate output_styles
-	// TODO(components): enumerate lsp_servers
-	// TODO(components): enumerate monitors
-	// TODO(components): enumerate executables
+	Skills      []skillInfo      `json:"skills"`
+	Agents      []agentInfo      `json:"agents"`
+	McpServers  []mcpServerInfo  `json:"mcpServers"`
+	Hooks       []hookEventInfo  `json:"hooks"`
+	Commands    []commandInfo    `json:"commands"`
+	LspServers  []lspServerInfo  `json:"lspServers"`
+	Monitors    []monitorInfo    `json:"monitors"`
+	Executables []executableInfo `json:"executables"`
+	// TODO(components): enumerate output_styles — plugin reference documents .md files in
+	// output-styles/ and manifest key outputStyles, but specifies no frontmatter schema
+	// (no name/description field names). Verify field names from docs before implementing.
 }
 
 // HandleDescribePlugin is the generic typed handler for the describe_plugin tool.
@@ -157,19 +185,53 @@ func HandleDescribePlugin(_ context.Context, _ *mcp.CallToolRequest, input Descr
 		return errResult(skerrors.ErrInvalidManifest, "failed to parse plugin.json", err.Error()), DescribePluginOutput{}, nil
 	}
 
+	allSkills := enumerateSkills(pluginRoot, raw)
+	skillsTotal := len(allSkills)
+
+	skills, nextCursor := paginateSkills(allSkills, input.SkillsLimit, input.SkillsCursor)
+
 	output := DescribePluginOutput{
-		Path:     pluginRoot,
-		Manifest: manifest,
+		Path:             pluginRoot,
+		Manifest:         manifest,
+		SkillsTotal:      skillsTotal,
+		SkillsNextCursor: nextCursor,
 		Components: pluginComponents{
-			Skills:     enumerateSkills(pluginRoot, raw),
-			Agents:     enumerateAgents(pluginRoot, raw),
-			McpServers: enumerateMcpServers(pluginRoot, raw),
-			Hooks:      enumerateHooks(pluginRoot, raw),
-			Commands:   enumerateCommands(pluginRoot, raw),
+			Skills:      skills,
+			Agents:      enumerateAgents(pluginRoot, raw),
+			McpServers:  enumerateMcpServers(pluginRoot, raw),
+			Hooks:       enumerateHooks(pluginRoot, raw),
+			Commands:    enumerateCommands(pluginRoot, raw),
+			LspServers:  enumerateLspServers(pluginRoot, raw),
+			Monitors:    enumerateMonitors(pluginRoot, raw),
+			Executables: enumerateExecutables(pluginRoot, raw),
 		},
 	}
 
 	return nil, output, nil
+}
+
+// paginateSkills applies limit/cursor pagination to a pre-enumerated skills slice.
+// limit=0 returns all skills. The cursor is a decimal offset string; invalid cursors
+// are treated as offset 0. Returns the page slice and the next cursor (empty if done).
+func paginateSkills(all []skillInfo, limit int, cursor string) ([]skillInfo, string) {
+	if limit <= 0 {
+		return all, ""
+	}
+	offset := 0
+	if cursor != "" {
+		if n, err := strconv.Atoi(cursor); err == nil && n > 0 {
+			offset = n
+		}
+	}
+	total := len(all)
+	if offset >= total {
+		return []skillInfo{}, ""
+	}
+	end := offset + limit
+	if end >= total {
+		return all[offset:], ""
+	}
+	return all[offset:end], strconv.Itoa(end)
 }
 
 func readManifest(path string) (rawPluginManifest, manifestSummary, error) {
@@ -423,6 +485,119 @@ func enumerateCommands(pluginRoot string, m rawPluginManifest) []commandInfo {
 		return []commandInfo{}
 	}
 	return commands
+}
+
+type lspServerEntry struct {
+	Command             string            `json:"command"`
+	Args                []string          `json:"args"`
+	ExtensionToLanguage map[string]string `json:"extensionToLanguage"`
+}
+
+func lspMapToList(m map[string]lspServerEntry) []lspServerInfo {
+	list := make([]lspServerInfo, 0, len(m))
+	for name, e := range m {
+		info := lspServerInfo{Name: name, Command: e.Command}
+		if len(e.ExtensionToLanguage) > 0 {
+			info.ExtensionToLanguage = e.ExtensionToLanguage
+		}
+		list = append(list, info)
+	}
+	sort.Slice(list, func(i, j int) bool { return list[i].Name < list[j].Name })
+	return list
+}
+
+func lspServersFromFile(path string) []lspServerInfo {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var servers map[string]lspServerEntry
+	if err := json.Unmarshal(data, &servers); err != nil {
+		return nil
+	}
+	return lspMapToList(servers)
+}
+
+func enumerateLspServers(pluginRoot string, m rawPluginManifest) []lspServerInfo {
+	if len(m.LspServers) > 0 && string(m.LspServers) != "null" {
+		var pathStr string
+		if json.Unmarshal(m.LspServers, &pathStr) == nil && pathStr != "" {
+			abs := pathStr
+			if !filepath.IsAbs(abs) {
+				abs = filepath.Join(pluginRoot, pathStr)
+			}
+			if list := lspServersFromFile(abs); list != nil {
+				return list
+			}
+			return []lspServerInfo{}
+		}
+		var servers map[string]lspServerEntry
+		if json.Unmarshal(m.LspServers, &servers) == nil {
+			return lspMapToList(servers)
+		}
+	}
+	if list := lspServersFromFile(filepath.Join(pluginRoot, ".lsp.json")); list != nil {
+		return list
+	}
+	return []lspServerInfo{}
+}
+
+func monitorsFromFile(path string) []monitorInfo {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var monitors []monitorInfo
+	if err := json.Unmarshal(data, &monitors); err != nil {
+		return nil
+	}
+	return monitors
+}
+
+func enumerateMonitors(pluginRoot string, m rawPluginManifest) []monitorInfo {
+	if len(m.Monitors) > 0 && string(m.Monitors) != "null" {
+		var pathStr string
+		if json.Unmarshal(m.Monitors, &pathStr) == nil && pathStr != "" {
+			abs := pathStr
+			if !filepath.IsAbs(abs) {
+				abs = filepath.Join(pluginRoot, pathStr)
+			}
+			if list := monitorsFromFile(abs); list != nil {
+				return list
+			}
+			return []monitorInfo{}
+		}
+		var monitors []monitorInfo
+		if json.Unmarshal(m.Monitors, &monitors) == nil {
+			if monitors == nil {
+				return []monitorInfo{}
+			}
+			return monitors
+		}
+	}
+	if list := monitorsFromFile(filepath.Join(pluginRoot, "monitors", "monitors.json")); list != nil {
+		return list
+	}
+	return []monitorInfo{}
+}
+
+func enumerateExecutables(pluginRoot string, _ rawPluginManifest) []executableInfo {
+	base := filepath.Join(pluginRoot, "bin")
+	entries, err := os.ReadDir(base)
+	if err != nil {
+		return []executableInfo{}
+	}
+	var execs []executableInfo
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		execs = append(execs, executableInfo{File: e.Name()})
+	}
+	if execs == nil {
+		return []executableInfo{}
+	}
+	return execs
 }
 
 // errResult constructs a tool result containing a SkillhubError JSON payload.
