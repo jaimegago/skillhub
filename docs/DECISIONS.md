@@ -118,3 +118,15 @@ The `x-` prefix follows the widely-recognized convention (OpenAPI, Kubernetes CR
 **Input override.** `check_drift` input also accepts an optional `marketplace` + `plugin` override pair; when both are provided, the `x-skillhub-upstream` field in `plugin.json` is ignored for that invocation. Useful for testing a local plugin against an arbitrary upstream without modifying its manifest.
 
 **Verified against.** [Plugin manifest schema](https://code.claude.com/docs/en/plugins-reference) — top-level fields are an open set; unrecognized fields do not fail validation. (From training: schema is JSON-Schema-based and does not use `additionalProperties: false` at the root. Unverified this session; will confirm if the implementation shows a validation failure.)
+
+## 2026-04-22 — output_styles frontmatter shape: name + description only, inferred from convention
+
+**Context.** `enumerateOutputStyles` in `internal/tools/describe_plugin.go` needs a frontmatter schema to parse output-style files. The [Claude Code plugin reference](https://code.claude.com/docs/en/plugins-reference) documents `output_styles` as a component type with default directory `output-styles/` and manifest key `outputStyles` (`string|array`), but the reference gives no frontmatter field schema — no field names are listed and no example frontmatter is shown.
+
+**Research.** Sparse-cloned all 33 plugins from `github.com/anthropics/claude-plugins-public` via `internal/fetch` to look for a real-world output-style file. Zero plugins had an `output-styles/` directory. The two plugins named as if they would — `explanatory-output-style` and `learning-output-style` — implement their behavior entirely via hooks, not via markdown files with frontmatter.
+
+**Decision.** `enumerateOutputStyles` parses frontmatter with `name` and `description` fields only, matching `enumerateAgents` byte-for-byte. The shape is inferred from convention: every other markdown-frontmatter component in the Claude Code plugin system (skills, agents, commands) uses `name` + `description`, and no real-world counterexample exists to contradict it.
+
+**Consequence.** If a real-world output-style file appears in any marketplace and carries frontmatter fields beyond `name` and `description`, `enumerateOutputStyles` will silently drop those fields. Not a correctness failure — the enumeration returns partial but valid metadata — but a completeness gap. Revisit when: (a) the Claude Code reference adds an explicit output-styles frontmatter schema, or (b) a plugin ships a real `output-styles/` directory with markdown files we can inspect.
+
+**Verified against.** [Claude Code plugin reference](https://code.claude.com/docs/en/plugins-reference) as of 2026-04-22 — `output_styles` is listed as a component type but no frontmatter schema is documented. Sparse-clone of all 33 plugins in `github.com/anthropics/claude-plugins-public` on 2026-04-22 — zero `output-styles/` directories exist across all 33 plugins.
