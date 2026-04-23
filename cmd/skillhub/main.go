@@ -11,7 +11,11 @@ import (
 	"github.com/jaime-gago/skillhub/internal/server"
 )
 
-var version = "0.1.0"
+var (
+	version = "0.1.0"
+	commit  = "unknown"
+	date    = "unknown"
+)
 
 func main() {
 	root := &cobra.Command{
@@ -31,9 +35,19 @@ func main() {
 
 	root.AddCommand(&cobra.Command{
 		Use:   "version",
-		Short: "Print build version",
+		Short: "Print version, commit, and build date",
+		Long: `Print build metadata on three lines:
+
+  version <semver>
+  commit  <short-sha>
+  date    <UTC ISO-8601>
+
+Each line is a key and a value separated by a single tab, so downstream
+tools can parse with: awk '/^version/{print $2}'.`,
 		Run: func(_ *cobra.Command, _ []string) {
-			fmt.Println(version)
+			fmt.Printf("version\t%s\n", version)
+			fmt.Printf("commit\t%s\n", commit)
+			fmt.Printf("date\t%s\n", date)
 		},
 	})
 
