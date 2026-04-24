@@ -72,9 +72,10 @@ changelog:
     - title: Others
       order: 999
 
-# brews: deprecated since goreleaser v2.10 but still functional for CLI formula publishing.
-# If publishing breaks after a goreleaser upgrade, check https://goreleaser.com/customization/homebrew/
-brews:
+# homebrew_casks: is current as of goreleaser v2.10 (replaces the deprecated brews: key).
+# The post-install hook is needed because skillhub binaries are not currently signed/notarized —
+# it removes the quarantine bit so users aren't blocked by Gatekeeper on fresh macOS installs.
+homebrew_casks:
   - name: skillhub
     # repository: is the current key (verified); the old tap: key does not exist in v2.
     repository:
@@ -88,10 +89,14 @@ brews:
     homepage: "https://github.com/jaimegago/skillhub"
     description: "MCP server for authoring and maintaining Claude Code plugins and skills"
     license: "Apache-2.0"
-    install: |
-      bin.install "skillhub"
-    test: |
-      system "#{bin}/skillhub", "version"
+    binaries:
+      - skillhub
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/skillhub"]
+          end
 
 scoops:
   - name: skillhub

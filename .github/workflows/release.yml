@@ -12,23 +12,23 @@ jobs:
       contents: write
     steps:
       # fetch-depth: 0 gives goreleaser the full git history it needs for changelog generation.
-      - uses: actions/checkout@v4
+      # pinned to current major as of 2026-04-24
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       # go-version-file reads the version from go.mod so this workflow stays in sync
-      # without manual updates. go.mod currently requires go 1.25.
-      # actions/setup-go@v5 is the version goreleaser's own docs test against;
-      # v6 exists on the marketplace but goreleaser CI examples use v5.
-      - uses: actions/setup-go@v5
+      # without manual updates.
+      # pinned to current major as of 2026-04-24
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
 
-      # goreleaser/goreleaser-action current major: v7 (verified from goreleaser.com/ci/actions/).
       # args: release --clean replaces the old --rm-dist flag.
       # HOMEBREW_TAP_GITHUB_TOKEN is the PAT scoped to homebrew-skillhub and scoop-skillhub
       # with contents:write. It is referenced inside .goreleaser.yaml as
-      # {{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }} in both brews and scoops repository blocks.
+      # {{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }} in both homebrew_casks and scoops repository blocks.
+      # pinned to current major as of 2026-04-24
       - uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser
