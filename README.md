@@ -68,7 +68,7 @@ make build
 make install
 ```
 
-`make install` copies the binary to `$GOPATH/bin` (or `~/go/bin` if `GOPATH` is unset), placing it on `$PATH`.
+`make install` copies the binary to `$GOBIN` if set, otherwise `$HOME/go/bin`. Ensure that directory is on `$PATH`.
 
 ## Claude Code plugin usage
 

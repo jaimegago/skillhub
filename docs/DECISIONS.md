@@ -1,3 +1,28 @@
+## 2026-04-24 — v0.1.0 shipped: first public release of skillhub
+
+**Context.** First public release of skillhub. Three tools are implemented (`describe_plugin`, `list_available_plugins`, `check_drift`), four return `NOT_IMPLEMENTED` stubs (`diff_skill`, `propose_skill_changes`, `search_plugins`, `recommend_plugins`). Goal was to ship end-to-end distribution (Homebrew, Scoop, install scripts, GitHub release) in a single session rather than a minimum "source-only" release.
+
+**Decision.** Shipped the following in a single goreleaser run triggered by tag push to `v0.1.0`:
+
+- GitHub release v0.1.0 with five platform archives (darwin/amd64, darwin/arm64, linux/amd64, linux/arm64, windows/amd64) plus SHA-256 checksums
+- Homebrew Cask published at `jaimegago/homebrew-skillhub/Casks/skillhub.rb`
+- Scoop manifest published at `jaimegago/scoop-skillhub/skillhub.json`
+- `install.sh` and `install.ps1` hosted on the main branch of skillhub
+- `go install github.com/jaimegago/skillhub/cmd/skillhub@v0.1.0`
+
+**Notable deviations during this session.**
+
+- Initial goreleaser config used the `brews:` key, which was deprecated in goreleaser v2.10 in favor of `homebrew_casks:`. Caught and corrected before tagging (commit `be41500`).
+- Go module path in `go.mod` declared `github.com/jaime-gago/skillhub`, but the live GitHub repository is at `github.com/jaimegago/skillhub` (no hyphen). Renamed in a dedicated refactor commit before release plumbing was added.
+- The v0.1.0 tag was created and pushed before a small `.gitignore` cleanup commit (adding `dist/` to gitignore). Result: v0.1.0 points at commit `be41500`, and the `.gitignore` commit exists on main but is not in the tagged release. Cosmetic; `dist/` was never tracked in git anyway.
+- Release notes include one literal "TODO" line bleeding in from a commit body. Cosmetic; note to self to scrub commit bodies before tag time on future releases.
+
+**Consequence.** darwin/arm64 install path is verified end-to-end (see Verified against). Untested surfaces — Scoop, `install.sh`, `install.ps1`, and all non-darwin-arm64 platforms — are day-one risk for the first Windows and Linux users.
+
+Follow-ups: (a) v0.1.1 should scrub the "TODO" from release notes; (b) Scoop, `install.sh`, and `install.ps1` failures from early users are priority for v0.1.1; (c) four stubbed tools remain the obvious next development priority: `diff_skill`, `propose_skill_changes`, `search_plugins`, `recommend_plugins`.
+
+**Verified against.** `brew tap jaimegago/skillhub && brew install jaimegago/skillhub/skillhub` on darwin/arm64 (the session host) succeeded. Binary landed on `$PATH` at `/opt/homebrew/bin/skillhub`. `skillhub version` printed the correct tag, short commit SHA, and build date, confirming the ldflags-injection chain (goreleaser config → CI build → archive → Cask → install → runtime output) is intact. GitHub release page, tap repo contents, and bucket repo contents verified via `gh release view` and `gh api` calls during this session. Scoop install path, `install.sh`, `install.ps1`, and any non-darwin-arm64 platform not verified this session.
+
 ## 2026-04-23 — v0.1.0 distribution: binary-first, $PATH-resolved plugin command
 
 **Context.** v0.1.0 is the first public release. Code is ready: 3 of 7 tools are implemented (`describe_plugin`, `list_available_plugins`, `check_drift`), the test suite passes, and the MCP server works end-to-end. The release needs a distribution model that serves two distinct audiences: binary users (install via Homebrew, Scoop, or an install script, no repo clone required) and developer users (clone + build from source, iterate on the code).
