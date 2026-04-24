@@ -1,6 +1,6 @@
 # skillhub
 
-A Claude Code plugin that ships an MCP server with tooling for authoring, inspecting, and maintaining Claude Code plugins and skills.
+An MCP server that provides tooling for authoring, inspecting, and maintaining Claude Code plugins and skills.
 
 **Status**: three tools implemented (`check_drift`, `list_available_plugins`, `describe_plugin`); four return `NOT_IMPLEMENTED` stubs (`diff_skill`, `propose_skill_changes`, `search_plugins`, `recommend_plugins`).
 
@@ -70,24 +70,40 @@ make install
 
 `make install` copies the binary to `$GOBIN` if set, otherwise `$HOME/go/bin`. Ensure that directory is on `$PATH`.
 
-## Claude Code plugin usage
+## Use with an MCP client
 
-`plugin.json` resolves the `skillhub` binary from `$PATH`. Any install method that places the binary on `$PATH` enables plugin use without a separate build step.
+skillhub speaks the Model Context Protocol (MCP) over stdio. Any MCP client can use it after installing the binary.
 
-**Binary installs (Homebrew, Scoop, install scripts):** the binary is on `$PATH` after installation. Clone this repo to get `plugin.json`, then activate:
+### Claude Code
 
-```bash
-git clone https://github.com/jaimegago/skillhub
-claude --plugin-dir skillhub
-```
-
-**Build from source:** run `make install` after `make build` to put the binary on `$PATH`, then:
+Register skillhub as an MCP server in Claude Code:
 
 ```bash
-claude --plugin-dir .
+claude mcp add skillhub -- skillhub mcp
 ```
 
-Once activated, run `/mcp` inside Claude Code to confirm the `skillhub` server and its tools appear.
+### Claude Desktop
+
+Edit `claude_desktop_config.json` and add a server entry:
+
+```json
+{
+  "mcpServers": {
+    "skillhub": {
+      "command": "skillhub",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+Config file locations:
+- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+
+### Other MCP clients
+
+Any MCP client that supports stdio servers works the same way — point it at the `skillhub` binary with `mcp` as the argument.
 
 ## Configuration
 

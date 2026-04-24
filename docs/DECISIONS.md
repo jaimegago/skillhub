@@ -1,6 +1,22 @@
+## 2026-04-24 — skillhub positioned as a standalone MCP server
+
+**Context.** Initial design included `.claude-plugin/plugin.json` treating skillhub as a Claude Code plugin. Research during the v0.1.0 ship session (docs.claude.com plugin documentation, fetched that session) confirmed that end-user Claude Code plugin install happens via marketplaces, not via `--plugin-dir` (which is documented as a local-development flag). skillhub ships no marketplace, so the plugin wrapping offered no functional install path — and skillhub currently bundles no skills, slash commands, hooks, or agents, so there is nothing the plugin layer would wrap beyond the bare MCP server.
+
+**Decision.** Position skillhub as a standalone MCP server. Remove `.claude-plugin/` from the repo. Document install for MCP clients generally (Claude Code, Claude Desktop, others) rather than for Claude Code plugin activation specifically. skillhub still exists to help work ON Claude Code plugins (via its tools like `describe_plugin`, `check_drift`) — that is the domain it operates in — but it is not itself distributed as one.
+
+**Consequence.**
+
+- Binary users have a single clean install path: install via their package manager, register with their MCP client.
+- Any MCP client works, not just Claude Code.
+- No speculative plugin layer being maintained.
+
+**Future path.** If skillhub later adds bundled skills, slash commands, or hooks that benefit from Claude Code plugin packaging, reintroduce `.claude-plugin/` with a proper marketplace at that point. Until then, the plugin layer is pure overhead.
+
+**Verified against.** Claude Code plugin documentation (docs.claude.com plugin-marketplaces and discover-plugins pages), fetched during the v0.1.0 ship session. Verified `--plugin-dir` is documented as local-development-only, and that marketplace-based install is the canonical end-user path.
+
 ## 2026-04-24 — v0.1.0 shipped: first public release of skillhub
 
-**Context.** First public release of skillhub. Three tools are implemented (`describe_plugin`, `list_available_plugins`, `check_drift`), four return `NOT_IMPLEMENTED` stubs (`diff_skill`, `propose_skill_changes`, `search_plugins`, `recommend_plugins`). Goal was to ship end-to-end distribution (Homebrew, Scoop, install scripts, GitHub release) in a single session rather than a minimum "source-only" release.
+**Context.** First public release of skillhub. Three tools implemented (`check_drift`, `list_available_plugins`, `describe_plugin`), four stubbed (`diff_skill`, `propose_skill_changes`, `search_plugins`, `recommend_plugins`). Goal was to ship end-to-end distribution in a single session rather than a minimum source-only release.
 
 **Decision.** Shipped the following in a single goreleaser run triggered by tag push to `v0.1.0`:
 
@@ -9,19 +25,24 @@
 - Scoop manifest published at `jaimegago/scoop-skillhub/skillhub.json`
 - `install.sh` and `install.ps1` hosted on the main branch of skillhub
 - `go install github.com/jaimegago/skillhub/cmd/skillhub@v0.1.0`
+- All driven by a single goreleaser run triggered by tag push to `v0.1.0`
 
 **Notable deviations during this session.**
 
 - Initial goreleaser config used the `brews:` key, which was deprecated in goreleaser v2.10 in favor of `homebrew_casks:`. Caught and corrected before tagging (commit `be41500`).
 - Go module path in `go.mod` declared `github.com/jaime-gago/skillhub`, but the live GitHub repository is at `github.com/jaimegago/skillhub` (no hyphen). Renamed in a dedicated refactor commit before release plumbing was added.
 - The v0.1.0 tag was created and pushed before a small `.gitignore` cleanup commit (adding `dist/` to gitignore). Result: v0.1.0 points at commit `be41500`, and the `.gitignore` commit exists on main but is not in the tagged release. Cosmetic; `dist/` was never tracked in git anyway.
-- Release notes include one literal "TODO" line bleeding in from a commit body. Cosmetic; note to self to scrub commit bodies before tag time on future releases.
+- Release notes include one literal "TODO" line bleeding in from a commit body. Cosmetic; worth scrubbing commit bodies before tag time on future releases.
 
-**Consequence.** darwin/arm64 install path is verified end-to-end (see Verified against). Untested surfaces — Scoop, `install.sh`, `install.ps1`, and all non-darwin-arm64 platforms — are day-one risk for the first Windows and Linux users.
+**Verification (end-to-end).** `brew tap jaimegago/skillhub && brew install jaimegago/skillhub/skillhub` on darwin/arm64 succeeded. Binary landed on `$PATH` at `/opt/homebrew/bin/skillhub`. `skillhub version` printed the correct tag, short commit SHA, and build date — confirming the ldflags-injection chain (goreleaser config → CI build → archive → Cask → install → runtime) is intact. Not verified this session: Scoop install path, `install.sh`, `install.ps1`, non-darwin-arm64 platforms. Day-one Windows users will exercise Scoop and `install.ps1`.
 
-Follow-ups: (a) v0.1.1 should scrub the "TODO" from release notes; (b) Scoop, `install.sh`, and `install.ps1` failures from early users are priority for v0.1.1; (c) four stubbed tools remain the obvious next development priority: `diff_skill`, `propose_skill_changes`, `search_plugins`, `recommend_plugins`.
+**Consequence / follow-ups.**
 
-**Verified against.** `brew tap jaimegago/skillhub && brew install jaimegago/skillhub/skillhub` on darwin/arm64 (the session host) succeeded. Binary landed on `$PATH` at `/opt/homebrew/bin/skillhub`. `skillhub version` printed the correct tag, short commit SHA, and build date, confirming the ldflags-injection chain (goreleaser config → CI build → archive → Cask → install → runtime output) is intact. GitHub release page, tap repo contents, and bucket repo contents verified via `gh release view` and `gh api` calls during this session. Scoop install path, `install.sh`, `install.ps1`, and any non-darwin-arm64 platform not verified this session.
+- v0.1.1: scrub "TODO" from release notes (rewrite the offending commit or document the pattern to avoid repetition).
+- Scoop, `install.sh`, `install.ps1` paths remain untested surfaces — priority for v0.1.1 if issues are reported by early users.
+- Four stubbed tools remain the obvious next development priority.
+
+**Verified against.** Homebrew install on darwin/arm64 during this session (output captured). GitHub release page, tap repo contents, bucket repo contents verified via `gh release view` and `gh api` calls.
 
 ## 2026-04-23 — v0.1.0 distribution: binary-first, $PATH-resolved plugin command
 
