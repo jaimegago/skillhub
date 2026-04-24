@@ -32,13 +32,13 @@
 - Initial goreleaser config used the `brews:` key, which was deprecated in goreleaser v2.10 in favor of `homebrew_casks:`. Caught and corrected before tagging (commit `be41500`).
 - Go module path in `go.mod` declared `github.com/jaime-gago/skillhub`, but the live GitHub repository is at `github.com/jaimegago/skillhub` (no hyphen). Renamed in a dedicated refactor commit before release plumbing was added.
 - The v0.1.0 tag was created and pushed before a small `.gitignore` cleanup commit (adding `dist/` to gitignore). Result: v0.1.0 points at commit `be41500`, and the `.gitignore` commit exists on main but is not in the tagged release. Cosmetic; `dist/` was never tracked in git anyway.
-- Release notes include one literal "TODO" line bleeding in from a commit body. Cosmetic; worth scrubbing commit bodies before tag time on future releases.
+- Release notes contain "TODO" in three commit subjects. _Correction (2026-04-24): initial diagnosis that a commit body was bleeding in was incorrect._ goreleaser's `use: git changelog` mode includes commit subjects only, never bodies. The three subjects are legitimate past-tense references to closed TODOs: `8fdb7a5` ("closes final component TODO"), `06f22159` ("closes walkDirContents TODO"), `32024615` ("closes TODO(v2)"). The commit initially suspected of leaking its body (`98757a9`) appears in the release notes with its clean subject only. Classified as cosmetic; no goreleaser filter, commit hook, or history rewrite is warranted.
 
 **Verification (end-to-end).** `brew tap jaimegago/skillhub && brew install jaimegago/skillhub/skillhub` on darwin/arm64 succeeded. Binary landed on `$PATH` at `/opt/homebrew/bin/skillhub`. `skillhub version` printed the correct tag, short commit SHA, and build date — confirming the ldflags-injection chain (goreleaser config → CI build → archive → Cask → install → runtime) is intact. Not verified this session: Scoop install path, `install.sh`, `install.ps1`, non-darwin-arm64 platforms. Day-one Windows users will exercise Scoop and `install.ps1`.
 
 **Consequence / follow-ups.**
 
-- v0.1.1: scrub "TODO" from release notes (rewrite the offending commit or document the pattern to avoid repetition).
+- ~~v0.1.1: scrub "TODO" from release notes~~ — diagnosis revised 2026-04-24 (see Notable deviations above); subjects are accurate cleanup references, not a hygiene bug. No action required.
 - Scoop, `install.sh`, `install.ps1` paths remain untested surfaces — priority for v0.1.1 if issues are reported by early users.
 - Four stubbed tools remain the obvious next development priority.
 
