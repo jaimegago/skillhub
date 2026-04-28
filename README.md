@@ -47,7 +47,7 @@ iwr https://raw.githubusercontent.com/jaimegago/skillhub/main/install.ps1 | iex
 ### go install
 
 ```bash
-go install github.com/jaimegago/skillhub/cmd/skillhub@v0.1.0
+go install github.com/jaimegago/skillhub/cmd/skillhub@v0.2.0
 ```
 
 ### Build from source
@@ -70,7 +70,7 @@ skillhub speaks the Model Context Protocol (MCP) over stdio. Any MCP client can 
 Register skillhub as an MCP server in Claude Code:
 
 ```bash
-claude mcp add skillhub -- skillhub mcp
+claude mcp add --scope user skillhub -- skillhub mcp
 ```
 
 ### Claude Code (VS Code Extension)
