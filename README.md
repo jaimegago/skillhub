@@ -65,13 +65,30 @@ make install
 
 skillhub speaks the Model Context Protocol (MCP) over stdio. Any MCP client can use it after installing the binary.
 
-### Claude Code
+### Claude Code (CLI)
 
 Register skillhub as an MCP server in Claude Code:
 
 ```bash
 claude mcp add skillhub -- skillhub mcp
 ```
+
+### Claude Code (VS Code Extension)
+
+The VS Code extension shares Claude Code's user-level config, so the `claude mcp add` command above works here too. Alternatively, to scope the server to a specific workspace, add it to `.claude/settings.json` at the project root:
+
+```json
+{
+  "mcpServers": {
+    "skillhub": {
+      "command": "skillhub",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+Commit that file to give everyone on the project access to skillhub without any per-machine setup.
 
 ### Claude Desktop
 
