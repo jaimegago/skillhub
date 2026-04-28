@@ -3,7 +3,6 @@ package tools_test
 import (
 	"context"
 	"encoding/json"
-	"strings"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -33,22 +32,6 @@ func callCheckDrift(t *testing.T, input tools.CheckDriftInput) *mcp.CallToolResu
 	}
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{&mcp.TextContent{Text: string(b)}},
-	}
-}
-
-// assertNotImplemented is shared by stub test files (diff_skill, search_plugins,
-// propose_skill_changes, recommend_plugins).
-func assertNotImplemented(t *testing.T, result *mcp.CallToolResult) {
-	t.Helper()
-	if len(result.Content) == 0 {
-		t.Fatal("expected non-empty Content in result")
-	}
-	text, ok := result.Content[0].(*mcp.TextContent)
-	if !ok {
-		t.Fatalf("expected *mcp.TextContent, got %T", result.Content[0])
-	}
-	if !strings.Contains(text.Text, "NOT_IMPLEMENTED") {
-		t.Errorf("expected NOT_IMPLEMENTED in content, got %q", text.Text)
 	}
 }
 

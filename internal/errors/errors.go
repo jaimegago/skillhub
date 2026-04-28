@@ -20,6 +20,7 @@ const (
 	ErrMarketplaceUnreachable   ErrorCode = "MARKETPLACE_UNREACHABLE"
 	ErrMarketplaceNotConfigured ErrorCode = "MARKETPLACE_NOT_CONFIGURED"
 	ErrUnsupportedSource        ErrorCode = "UNSUPPORTED_SOURCE"
+	ErrInvalidInput             ErrorCode = "INVALID_INPUT"
 )
 
 // SkillhubError is the structured error type serialised into all tool results.

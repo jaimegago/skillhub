@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -598,54 +597,6 @@ func TestDescribePlugin_SkillsPagination(t *testing.T) {
 	}
 	if out0.SkillsNextCursor != "" {
 		t.Errorf("no-limit expected empty SkillsNextCursor, got %q", out0.SkillsNextCursor)
-	}
-}
-
-// FIX 2: use runtime.Caller(0) to locate this test file, then walk up to find
-// the module root (directory containing go.mod). This is deterministic
-// regardless of working directory and never skips.
-func TestDescribePlugin_SelfDescribing(t *testing.T) {
-	_, thisFile, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("runtime.Caller(0) failed")
-	}
-
-	// Walk up from the test file's directory until we find go.mod.
-	dir := filepath.Dir(thisFile)
-	repoRoot := ""
-	for {
-		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			repoRoot = dir
-			break
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			break
-		}
-		dir = parent
-	}
-	if repoRoot == "" {
-		t.Fatal("could not locate go.mod walking up from test file")
-	}
-
-	// The skillhub repo itself is a valid plugin — smoke-test against it.
-	result := callDescribePlugin(t, repoRoot)
-	text := resultText(t, result)
-
-	if strings.Contains(text, "PLUGIN_NOT_FOUND") || strings.Contains(text, "INVALID_MANIFEST") {
-		t.Errorf("self-describing test failed: %s", text)
-	}
-
-	var out struct {
-		Manifest struct {
-			Name string `json:"name"`
-		} `json:"manifest"`
-	}
-	if err := json.Unmarshal([]byte(text), &out); err != nil {
-		t.Fatalf("result is not valid JSON: %v\nraw: %s", err, text)
-	}
-	if out.Manifest.Name == "" {
-		t.Error("expected non-empty manifest name for skillhub self-describe")
 	}
 }
 

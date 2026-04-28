@@ -1,25 +1,14 @@
 // Package tools implements all MCP tool handlers exposed by the skillhub server.
 package tools
 
-import (
-	"encoding/json"
+import "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
-
-	skerrors "github.com/jaimegago/skillhub/internal/errors"
-)
-
-// Tool bundles an MCP tool declaration with its handler.
-//
-// Stubs set Handler (low-level mcp.ToolHandler) and InputSchema.
-// Fully-implemented tools set Register instead, which calls mcp.AddTool with
-// typed In/Out parameters so the SDK infers the JSON schema automatically.
-// Exactly one of Handler or Register must be non-nil for each Tool entry.
+// Tool bundles an MCP tool name, description, and its Register function.
+// Register calls mcp.AddTool with typed In/Out parameters so the SDK infers
+// the JSON schema automatically.
 type Tool struct {
 	Name        string
 	Description string
-	InputSchema any
-	Handler     mcp.ToolHandler
 	Register    func(*mcp.Server)
 }
 
@@ -34,20 +23,3 @@ var Registry = []Tool{
 	NewRecommendPlugins(),
 	NewDescribePlugin(),
 }
-
-// notImplemented returns the canonical stub result. All stubs call this.
-// Remove this function when the last stub is replaced with a real implementation.
-func notImplemented() (*mcp.CallToolResult, error) {
-	e := &skerrors.SkillhubError{
-		Code:    skerrors.ErrNotImplemented,
-		Message: "not implemented",
-	}
-	b, _ := json.Marshal(e)
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{&mcp.TextContent{Text: string(b)}},
-	}, nil
-}
-
-// emptySchema is a minimal valid JSON Schema used by all stubs.
-// Replace with a typed schema when each tool's real implementation lands.
-var emptySchema = map[string]any{"type": "object"}

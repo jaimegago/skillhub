@@ -2,28 +2,19 @@
 
 An MCP server that provides tooling for authoring, inspecting, and maintaining Claude Code plugins and skills.
 
-**Status**: three tools implemented (`check_drift`, `list_available_plugins`, `describe_plugin`); four return `NOT_IMPLEMENTED` stubs (`diff_skill`, `propose_skill_changes`, `search_plugins`, `recommend_plugins`).
-
 ## What it does
 
 skillhub exposes MCP tools to Claude covering the full plugin/skill lifecycle.
 
-**Implemented**
-
 | Tool | Description |
 |------|-------------|
 | `describe_plugin` | Return plugin.json metadata and enumerated component contents for a local plugin directory |
-| `list_available_plugins` | Fetch configured marketplace sources and list plugins not currently installed locally |
+| `list_available_plugins` | Fetch configured marketplace sources and list available plugins |
 | `check_drift` | Compare a locally-installed plugin against its declared marketplace upstream and report changed, added, and removed files |
-
-**Stubbed (not yet implemented)**
-
-| Tool | Description |
-|------|-------------|
-| `diff_skill` | Unified diff between local and canonical skill version |
-| `propose_skill_changes` | Open an MR against the marketplace source; supports `dry_run` |
-| `search_plugins` | Substring search across plugin metadata |
-| `recommend_plugins` | Rank plugins by relevance to a free-text description |
+| `diff_skill` | Unified diff between the local version of a skill and its canonical marketplace version |
+| `search_plugins` | Case-insensitive substring search across plugin names, descriptions, keywords, and categories |
+| `recommend_plugins` | Rank plugins by relevance to a free-text description of a task or need |
+| `propose_skill_changes` | Open a pull request against the marketplace source proposing local skill changes; supports `dry_run` |
 
 ## Install
 
@@ -138,7 +129,7 @@ Go 1.25+ required.
 
 See [CHANGELOG.md](CHANGELOG.md) for release history.
 
-Contributions are welcome. Implement one stub at a time: pick any tool in `internal/tools/`, remove the `notImplemented()` call, define typed input/output structs, write tests, and open a PR. `make test` and `make lint` must pass.
+Contributions are welcome. Pick a tool in `internal/tools/`, add a feature or fix, write tests, and open a PR. `make test` and `make lint` must pass.
 
 ## License
 
