@@ -25,6 +25,4 @@ jobs:
         run: make test
 
       - name: Lint
-        run: |
-          go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
-          make lint
+        uses: golangci/golangci-lint-action@v7
